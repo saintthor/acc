@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic MESH - Blockchain Guide</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --accent: #4f46e5;
+            --success: #10b981;
+            --text: #1e293b;
+            --text-dim: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #app { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+
+        .guide-bar {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        .step-pill {
+            padding: 8px 16px;
+            border-radius: 99px;
+            background: #f1f5f9;
+            color: var(--text-dim);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+            border: 1px solid transparent;
+        }
+        .step-pill.active { background: #e0e7ff; color: var(--accent); border-color: var(--accent); }
+        .step-pill.completed { background: var(--success); color: white; }
+
+        .main-content {
+            flex: 1;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tabs-nav {
+            display: flex;
+            background: white;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--border);
+            gap: 24px;
+        }
+
+        .tab-btn {
+            padding: 16px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: 0.2s;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .node-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+            opacity: 0.5;
+            pointer-events: none;
+            transition: 0.5s;
+        }
+        .node-grid.active { opacity: 1; pointer-events: auto; }
+
+        /* 区块链微型卡片样式 */
+        .chain-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
+            gap: 6px;
+        }
+
+        .chain-mini-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+            height: 48px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .chain-mini-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .chain-mini-card .val { font-size: 12px; font-weight: bold; color: var(--accent); line-height: 1; }
+        .chain-mini-card .owner { font-size: 8px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .node-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: var(--shadow);
+            position: relative;
+        }
+        .node-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+        .node-card.active-selection { border: 2px solid var(--accent); background: #f0f7ff; }
+
+        .user-count { position: absolute; top: 10px; right: 10px; font-size: 9px; color: var(--text-dim); background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+        .msg-badge { position: absolute; bottom: 8px; right: 10px; font-size: 9px; font-weight: bold; color: var(--accent); }
+
+        .id { font-size: 9px; font-family: monospace; color: var(--text-dim); margin-bottom: 8px; display: block; }
+        .slots { display: flex; gap: 3px; }
+        .slot { width: 6px; height: 6px; border-radius: 1px; background: #e2e8f0; }
+        .slot.active { background: var(--success); box-shadow: 0 0 4px var(--success); }
+
+        .user-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .user-profile-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .user-profile-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+
+        .user-pubkey-label {
+            font-family: monospace;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent);
+            word-break: break-all;
+            background: #f8fafc;
+            padding: 4px 6px;
+            border-radius: 4px;
+            display: block;
+        }
+
+        .side-panel {
+            width: 0; opacity: 0; background: #fff; border-left: 1px solid var(--border);
+            height: 100vh; transition: 0.4s; display: flex; flex-direction: column; flex-shrink: 0;
+            z-index: 100;
+        }
+        .side-panel.open { width: 420px; opacity: 1; }
+
+        .panel-header { padding: 24px; border-bottom: 1px solid var(--border); background: #fafafa; }
+        .panel-body { flex: 1; overflow-y: auto; padding: 24px; }
+        
+        #p-users-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 20px;
+        }
+        .user-item-mini { 
+            padding: 8px; background: #f8fafc; border: 1px solid var(--border); 
+            border-radius: 6px; font-size: 9px; text-align: center;
+        }
+
+        .peer-tag { 
+            background: #e0e7ff; color: var(--accent); padding: 4px 10px; 
+            border-radius: 4px; font-size: 10px; font-family: monospace;
+            font-weight: bold; border: 1px solid #c7d2fe;
+        }
+
+        .log-container {
+            background: #fcfcfd; border: 1px solid var(--border); border-radius: 8px;
+            padding: 12px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 11px; margin-top: 10px;
+        }
+        .log-line.in { color: #10b981; border-left: 2px solid #10b981; padding-left: 5px; margin-bottom: 4px; }
+        .log-line.out { color: #4f46e5; border-left: 2px solid #4f46e5; padding-left: 5px; margin-bottom: 4px; }
+
+        /* 区块详情样式 */
+        .block-card {
+            background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px;
+        }
+        .block-card h4 { font-size: 10px; color: var(--accent); text-transform: uppercase; margin-bottom: 4px; }
+        .block-card .hash { font-size: 9px; font-family: monospace; color: var(--text-dim); word-break: break-all; }
+        .block-card .data { font-size: 10px; margin-top: 6px; white-space: pre-wrap; font-family: monospace; color: var(--text); background: #fff; padding: 6px; border-radius: 4px; border: 1px solid var(--border); }
+
+        .input-group { padding: 20px 24px; border-top: 1px solid var(--border); background: #fafafa; display: flex; gap: 8px; }
+        .input-group input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border); outline: none; }
+        .btn-send { background: var(--accent); color: white; border: none; padding: 0 16px; border-radius: 6px; cursor: pointer; }
+
+        .empty-state { text-align: center; padding: 60px; color: var(--text-dim); font-size: 14px; }
+        .panel-section-title { font-size: 10px; font-weight: bold; color: var(--text-dim); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 20px; }
+        .panel-section-title:first-child { margin-top: 0; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="app">
+        <div style="flex: 1; display: flex; flex-direction: column;">
+            <div class="guide-bar">
+                <div id="step-1" class="step-pill active">1. 建立 P2P 网络</div>
+                <div id="step-2" class="step-pill">2. 生成加密身份</div>
+                <div id="step-3" class="step-pill" style="opacity: 0.3;">3. 原子交易</div>
+                <div style="flex: 1; text-align: right; font-size: 11px; color: var(--text-dim);" id="guide-text">
+                    欢迎！第一步是通过远端中继建立互联节点。
+                </div>
+            </div>
+
+            <main class="main-content">
+                <nav class="tabs-nav">
+                    <button class="tab-btn active" data-tab="tab-nodes">核心节点</button>
+                    <button class="tab-btn" data-tab="tab-users">加密用户</button>
+                    <button class="tab-btn" data-tab="tab-blockchain">区块链账目</button>
+                    <button class="tab-btn" data-tab="tab-fastlane">全网日志</button>
+                </nav>
+
+                <div id="tab-nodes" class="tab-content active">
+                    <div id="grid" class="node-grid"></div>
+                </div>
+
+                <div id="tab-users" class="tab-content">
+                    <div id="user-list-container" class="user-grid">
+                        <div class="empty-state">请先完成“步骤 2：生成加密身份”以查看用户列表。</div>
+                    </div>
+                </div>
+
+                <div id="tab-blockchain" class="tab-content">
+                    <div class="empty-state">区块链账本将在完成“原子交易”步骤后激活。</div>
+                </div>
+
+                <div id="tab-fastlane" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="font-size: 16px;">全网实时广播动态</h2>
+                        <button onclick="document.getElementById('global-log-stream').innerHTML=''" style="font-size: 10px; background:none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; cursor:pointer;">清空</button>
+                    </div>
+                    <div id="global-log-stream" class="log-container" style="height: calc(100vh - 250px);"></div>
+                </div>
+            </main>
+        </div>
+
+        <aside id="side-panel" class="side-panel">
+            <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div id="p-header-content">
+                    <h2 id="p-title" style="font-family: monospace; font-size: 16px; color: var(--accent);">ID</h2>
+                    <span id="p-subtitle" style="font-size: 10px; color: var(--text-dim);">Detail View</span>
+                </div>
+                <button id="p-close" style="background:none; border:none; font-size: 20px; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div id="p-body" class="panel-body">
+                <!-- 动态内容渲染区域 -->
+            </div>
+
+            <div id="p-footer" class="input-group" style="display:none;">
+                <select id="p-user-select" style="font-size: 11px; padding: 5px; border-radius: 4px; border: 1px solid var(--border); outline: none; background: white; max-width: 100px;">
+                    <option>选择身份...</option>
+                </select>
+                <input type="text" id="p-msg" placeholder="发送广播消息...">
+                <button id="p-broadcast" class="btn-send">广播</button>
+            </div>
+        </aside>
+    </div>
+    <script type="module" src="index.js"></script>
+</body>
+</html>

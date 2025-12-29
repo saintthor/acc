@@ -1,0 +1,5 @@
+{
+  "name": "Atomic Ownership P2P Simulator",
+  "description": "Vanilla JS P2P network simulator for Atomic Ownership Blockchains.",
+  "requestFramePermissions": []
+}
