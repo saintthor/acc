@@ -18,52 +18,68 @@ export class BlockchainUtils {
         return 0;
     }
 
-    // 签名模拟 (教育用途：使用内容+私钥的哈希表示签名)
     static async sign(content, privKey) {
+        // 在真实系统中，这是非对称签名。这里模拟一个基于内容和私钥的哈希签名。
         return await this.sha256(content + privKey);
-    }
-
-    static async verify(content, sig, pubKey, privKeyForSim) {
-        // 在真实系统中，这里会使用非对称加密验证
-        // 在此模拟器中，我们通过重新计算来验证
-        const expected = await this.sha256(content + privKeyForSim);
-        return sig === expected;
     }
 }
 
 export class BanknoteChain {
     constructor(serial, genesisBlock) {
         this.serial = serial;
-        this.blocks = [genesisBlock]; // 块结构: { type, data, sig, hash }
+        this.blocks = [genesisBlock]; // 块结构: { type, data, sig, hash, parentIndex }
         this.denomination = BlockchainUtils.getDenomination(serial);
     }
 
+    // 获取“名义上”的当前持有人（最长链末端）
     get currentOwner() {
         const lastBlock = this.blocks[this.blocks.length - 1];
         if (lastBlock.type === 'GENESIS') {
-            return lastBlock.data.split('\n')[2]; // K
+            return lastBlock.data.split('\n')[2];
         }
-        // 对于新的数据结构，持有人公钥在第一行
         return lastBlock.data.split('\n')[0];
     }
 
-    get lastHash() {
-        return this.blocks[this.blocks.length - 1].hash;
-    }
-
-    async addTransferBlock(senderPrivKey, recipientPubKey) {
-        const prevHash = this.lastHash;
+    /**
+     * 添加支付区块
+     * @param {string} senderPrivKey 发送者私钥
+     * @param {string} recipientPubKey 接收者公钥
+     * @param {number} parentIndex 父区块索引（允许分叉攻击测试）
+     */
+    async addTransferBlock(senderPrivKey, recipientPubKey, parentIndex = null) {
+        const pIdx = parentIndex !== null ? parentIndex : this.blocks.length - 1;
+        const parent = this.blocks[pIdx];
+        const prevHash = parent.hash;
         const ts = new Date().toISOString();
-        // 核心数据：接收者、前一区块哈希、时间戳
-        const coreData = `${recipientPubKey}\n${prevHash}\n${ts}`;
-        // 对核心数据进行签名
+        
+        // 核心数据结构升级
+        const coreData = `${recipientPubKey}\n${prevHash}\n${ts}\nType: TRANSFER`;
         const sig = await BlockchainUtils.sign(coreData, senderPrivKey);
-        // 最终存入区块的数据包含签名
         const finalData = `${coreData}\nSig: ${sig}`;
         const hash = await BlockchainUtils.sha256(finalData);
         
-        const newBlock = { type: 'TRANSFER', data: finalData, sig, hash, sender: this.currentOwner };
+        const newBlock = { 
+            type: 'TRANSFER', 
+            data: finalData, 
+            sig, 
+            hash, 
+            parentIndex: pIdx,
+            signerPubKey: await this._simulateExtractPubKey(senderPrivKey) // 模拟从签名提取的公钥
+        };
+        
         this.blocks.push(newBlock);
         return newBlock;
+    }
+
+    async _simulateExtractPubKey(privKey) {
+        // 这是一个模拟辅助函数：假设我们可以从签名/私钥关联中找到对应的公钥
+        // 在本模拟器的 AccountManager 中，我们保持这种对应关系
+        return "EXTRACTED_FROM_SIG"; 
+    }
+
+    getOwnerAt(idx) {
+        const b = this.blocks[idx];
+        if (b.type === 'GENESIS') return b.data.split('\n')[2];
+        return b.data.split('\n')[0];
     }
 }

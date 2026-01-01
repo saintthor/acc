@@ -3,56 +3,119 @@ import { AccountManager } from './account.js';
 import { BlockchainUtils, BanknoteChain } from './blockchain.js';
 
 const connector = new RemoteConnector();
-const nodes = [];
-let activeItem = null; // { type: 'NODE'|'USER'|'CHAIN', data: any }
-let currentStep = localStorage.getItem('atomic_step_v3') ? parseInt(localStorage.getItem('atomic_step_v3')) : 0;
+const localNodes = []; 
+let activeItem = null;
+let currentStep = 0;
 
-const sessionPrefix = localStorage.getItem('atomic_session_v3') || Math.random().toString(36).substring(7).toUpperCase();
-localStorage.setItem('atomic_session_v3', sessionPrefix);
+// 全球同步存储实例
+const accountManager = new AccountManager(connector.root);
+let banknoteChains = []; 
 
-const accountManager = new AccountManager(sessionPrefix);
-let banknoteChains = [];
+// --- 全局数据同步逻辑 ---
 
-// DOM Elements
-const grid = document.getElementById('grid');
-const panel = document.getElementById('side-panel');
-const step1Btn = document.getElementById('step-1');
-const step2Btn = document.getElementById('step-2');
-const step3Btn = document.getElementById('step-3');
-const guideText = document.getElementById('guide-text');
-const userGrid = document.getElementById('user-list-container');
-const chainGrid = document.getElementById('tab-blockchain');
-const globalLogStream = document.getElementById('global-log-stream');
+connector.root.get('chains').map().on((data, genesisHash) => {
+    if (!data) return;
+    const blocks = JSON.parse(data.blocks);
+    const existing = banknoteChains.find(c => c.genesisHash === genesisHash);
+    
+    if (existing) {
+        if (blocks.length > existing.blocks.length) {
+            existing.blocks = blocks;
+            if (activeItem && activeItem.type === 'CHAIN' && activeItem.data.genesisHash === genesisHash) {
+                renderPanel();
+            }
+            renderBlockchainTab();
+        }
+    } else {
+        const chain = new BanknoteChain(data.serial, blocks[0]);
+        chain.blocks = blocks;
+        chain.genesisHash = genesisHash;
+        chain.denomination = data.denomination;
+        banknoteChains.push(chain);
+        renderBlockchainTab();
+    }
+});
 
-// --- 全网日志监听 ---
+accountManager.onSync = () => {
+    renderUsersTab();
+    if (activeItem && activeItem.type === 'USER') renderPanel();
+};
+
+// --- UI 引导逻辑 ---
+
+function switchTab(tabId) {
+    const btns = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.tab-content');
+    btns.forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tabId));
+    contents.forEach(c => c.classList.toggle('active', c.id === tabId));
+}
+
+function updateStepUI(nextStepNum) {
+    const instruction = document.getElementById('instruction-text');
+    const activeContainer = document.getElementById('active-step-container');
+    const readyContainer = document.getElementById('ready-status-container');
+    const futureSteps = document.getElementById('future-steps');
+
+    const configs = {
+        1: {
+            ready: "P2P 节点群已就绪",
+            nextInstruction: "<strong>第二步：同步 30 个加密身份</strong><br>30 个虚拟节点已通过 UUID 互联。现在我们为这 30 个节点分别生成非对称加密密钥。在 AOB 体系中，公钥（Public Key）即是唯一的数字身份。",
+            nextBtnId: "step-2",
+            tab: "tab-nodes"
+        },
+        2: {
+            ready: "加密身份已同步",
+            nextInstruction: "<strong>第三步：发行 500 条资产区块链</strong><br>身份层已就绪。点击下方按钮将创建 500 条基于哈希标识的原子资产链。每条链都是独立的微型账本，并随机分发给上述公钥持有者。",
+            nextBtnId: "step-3",
+            tab: "tab-users"
+        },
+        3: {
+            ready: "500 条资产链已发行",
+            nextInstruction: "<strong>实验：原子所有权跨页面流动</strong><br>所有资产链现已跨页面同步。选择任意资产发起支付，你将观察到所有权如何在不经过全网共识的情况下实现原子级瞬时转移。",
+            tab: "tab-blockchain"
+        }
+    };
+
+    const config = configs[nextStepNum - 1];
+    if (config) {
+        const badge = document.createElement('div');
+        badge.className = 'status-ready';
+        badge.innerHTML = `✓ ${config.ready}`;
+        readyContainer.appendChild(badge);
+        instruction.innerHTML = config.nextInstruction;
+        
+        if (config.nextBtnId) {
+            const nextBtn = futureSteps.querySelector(`#${config.nextBtnId}`);
+            if (nextBtn) {
+                nextBtn.classList.remove('inactive');
+                activeContainer.innerHTML = '';
+                activeContainer.appendChild(nextBtn);
+            }
+        } else { activeContainer.innerHTML = ''; }
+        switchTab(config.tab);
+    }
+}
+
+// --- 日志监控 ---
+
 NetworkEvents.addEventListener('node-log', (e) => {
     const { nodeId, t, msg, type } = e.detail;
-    if (globalLogStream && (type === 'in' || type === 'out')) {
+    const stream = document.getElementById('global-log-stream');
+    if (stream && (type === 'in' || type === 'out')) {
         const line = document.createElement('div');
-        line.className = `log-line ${type}`;
-        line.innerHTML = `<span style="opacity: 0.5;">[${t}]</span> <b style="color:var(--text)">${nodeId}</b>: ${msg}`;
-        globalLogStream.prepend(line);
-        if (globalLogStream.children.length > 100) globalLogStream.lastChild.remove();
+        line.style.marginBottom = '2px';
+        line.innerHTML = `<span style="opacity:0.4">[${t}]</span> <b style="color:#818cf8">${nodeId.substring(0,8)}...</b>: <span style="color:${type==='in'?'#10b981':'#60a5fa'}">${msg}</span>`;
+        stream.prepend(line);
+        if (stream.children.length > 80) stream.lastChild.remove();
     }
-    if (activeItem && activeItem.type === 'NODE' && activeItem.data.id === nodeId) {
-        renderPanel();
-    }
+    if (activeItem && activeItem.type === 'NODE' && activeItem.data.id === nodeId) renderPanel();
 });
 
-// --- Tab Logic ---
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.onclick = () => {
-        const target = btn.getAttribute('data-tab');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(target).classList.add('active');
-    };
-});
+// --- 详情渲染 ---
 
 function openPanel(type, data) {
     activeItem = { type, data };
-    panel.classList.add('open');
+    document.getElementById('side-panel').classList.add('open');
     renderPanel();
 }
 
@@ -62,240 +125,205 @@ function renderPanel() {
     const body = document.getElementById('p-body');
     const title = document.getElementById('p-title');
     const subtitle = document.getElementById('p-subtitle');
-    const footer = document.getElementById('p-footer');
-
-    footer.style.display = 'none';
 
     if (type === 'NODE') {
-        const node = data;
-        title.textContent = node.id;
-        subtitle.textContent = "核心节点详情";
-        footer.style.display = 'flex';
-
-        const peersArr = Array.from(node.peers);
-        const users = accountManager.getUsersForNode(node.id);
-
+        const sid = data.id.substring(0, 12);
+        title.textContent = `Node ${sid}...`;
+        subtitle.textContent = "UUID 分布式链路";
         body.innerHTML = `
-            <p class="panel-section-title">直接连接的节点 (${peersArr.length}/5)</p>
-            <div class="peer-list">
-                ${peersArr.length > 0 ? peersArr.map(p => `<div class="peer-tag">${p.split('-').pop()}</div>`).join('') : '<span style="color:var(--text-dim); font-size:10px;">孤立节点</span>'}
+            <p class="form-label">物理 UUID:</p>
+            <p style="font-family:monospace; font-size:10px; color:var(--text-dim); margin-bottom:12px; word-break:break-all;">${data.id}</p>
+            <p class="form-label">P2P 连接状态:</p>
+            <p style="font-size:14px; font-weight:700; color:var(--success); margin-bottom:16px;">${data.peers.size} 活跃 Peer</p>
+            <p class="form-label">已知节点分布 (Hash Discoveries):</p>
+            <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:16px;">
+                ${Array.from(data.knownNodes).map(id => `<span style="font-size:9px; background:#f1f5f9; padding:2px 4px; border-radius:4px;">${id.substring(0,8)}</span>`).join('')}
             </div>
-            <p class="panel-section-title">本节点用户身份 (${users.length})</p>
-            <div id="p-users-grid">
-                ${users.map(u => `<div class="user-item-mini"><b style="color:var(--accent)">${u.id.split('-').pop()}</b><br/>${u.pubKey.substring(0,4)}..</div>`).join('')}
-            </div>
-            <p class="panel-section-title">节点事件日志</p>
-            <div class="log-container">
-                ${node.logs.map(l => `<div class="log-line ${l.type}"><span style="opacity:0.4">[${l.t}]</span> ${l.msg}</div>`).join('')}
+            <p class="form-label">实时同步日志:</p>
+            <div style="background:#0f172a; color:#10b981; padding:12px; border-radius:8px; font-family:monospace; font-size:11px; height:200px; overflow-y:auto;">
+                ${data.logs.map(l => `<div>[${l.t}] ${l.msg}</div>`).join('')}
             </div>
         `;
-
-        const select = document.getElementById('p-user-select');
-        select.innerHTML = '<option value="">身份...</option>' + users.map(u => `<option value="${u.id}">${u.id}</option>`).join('');
     } 
     else if (type === 'USER') {
         const user = data;
-        title.textContent = "USER ACCOUNT";
-        subtitle.textContent = user.pubKey.substring(0, 16) + "...";
+        title.textContent = `${user.pubKey.substring(0, 12)}...`;
+        subtitle.textContent = "公钥持有资产 (Atomic Tokens)";
         
-        const ownedChains = banknoteChains.filter(c => c.currentOwner === user.pubKey);
+        const sorted = [...banknoteChains].sort((a, b) => {
+            const aOwned = a.currentOwner === user.pubKey;
+            const bOwned = b.currentOwner === user.pubKey;
+            return aOwned === bOwned ? 0 : aOwned ? -1 : 1;
+        });
 
         body.innerHTML = `
-            <p class="panel-section-title">完整公钥 (Public Key)</p>
-            <div class="user-pubkey-label" style="font-size:10px;">${user.pubKey}</div>
-            
-            <p class="panel-section-title">所属节点 (Affiliated Nodes)</p>
-            <div class="peer-list">
-                ${user.nodeIds.map(nid => `<div class="peer-tag" style="background:#fef3c7; border-color:#fde68a; color:#b45309;">${nid.split('-').pop()}</div>`).join('')}
+            <div style="background:#f8fafc; padding:12px; border:1px solid var(--border); border-radius:8px; margin-bottom:16px;">
+                <p class="form-label">公钥 (唯一加密地址):</p>
+                <p style="font-family:monospace; font-size:10px; word-break:break-all; color:var(--accent);">${user.pubKey}</p>
             </div>
-
-            <p class="panel-section-title">拥有的原子区块链 (${ownedChains.length})</p>
-            <div class="chain-grid" style="grid-template-columns: repeat(2, 1fr);">
-                ${ownedChains.map(c => `
-                    <div class="chain-mini-card" style="height: auto; min-height: 60px; padding: 10px;" onclick="window.showChainDetail(${c.serial})">
-                        <div class="val">$${c.denomination}</div>
-                        <div style="font-size: 8px; color: var(--text-dim); margin-top: 4px; font-family: monospace; overflow: hidden; text-overflow: ellipsis;">ID: ${c.blocks[0].hash.substring(0, 8)}...</div>
-                    </div>
-                `).join('') || '<div style="font-size:11px; color:var(--text-dim);">暂无资产</div>'}
+            <p class="form-label">资产列表 (绿色为合法持有):</p>
+            <div class="chain-grid" style="max-height: 400px; overflow-y: auto;">
+                ${sorted.map(c => {
+                    const isOwned = c.currentOwner === user.pubKey;
+                    const gid = c.genesisHash.substring(0, 8);
+                    return `<div class="chain-mini-card ${isOwned?'owned':''}" onclick="window.showChainDetail('${c.genesisHash}')">
+                        <div style="font-size:11px;">$${c.denomination}</div>
+                        <div style="font-size:7px; color:var(--text-dim); opacity:0.7;">${gid}</div>
+                    </div>`;
+                }).join('')}
             </div>
         `;
     }
     else if (type === 'CHAIN') {
         const chain = data;
-        title.textContent = `BLOCKCHAIN #SN-${chain.serial}`;
-        subtitle.textContent = `原子钞票: 面额 $${chain.denomination}`;
-
+        const gidShort = chain.genesisHash.substring(0, 12);
+        title.textContent = `Asset ${gidShort}...`;
+        subtitle.textContent = `$${chain.denomination} 原子所有权链`;
+        
         body.innerHTML = `
-            <p class="panel-section-title">当前持有人 (Current Owner)</p>
-            <div class="user-pubkey-label" style="cursor:pointer;" onclick="window.showUserDetailByPubKey('${chain.currentOwner}')">${chain.currentOwner.substring(0, 12)}... (点击查看)</div>
-
-            <p class="panel-section-title">账本所有区块 (${chain.blocks.length})</p>
-            <div class="blocks-list">
-                ${chain.blocks.map((b, i) => `
-                    <div class="block-card">
-                        <h4>${b.type} Block ${i === 0 ? '(Genesis)' : '#'+i}</h4>
-                        <div class="hash">Hash: ${b.hash}</div>
-                        <div class="data">Data:\n${b.data}</div>
-                    </div>
-                `).join('')}
+            <div class="payment-form">
+                <p class="form-label">签署所有权转移</p>
+                <label class="form-label">接收人 (Target PubKey)</label>
+                <div style="display:flex; gap:4px;">
+                    <input type="text" id="pay-target" class="form-input" style="flex:1" placeholder="PK...">
+                    <button class="btn-step" style="padding:4px 8px; font-size:10px;" onclick="window.fillRandom()">随机</button>
+                </div>
+                <label class="form-label">签署身份</label>
+                <select id="pay-signer" class="form-input">
+                    ${accountManager.accounts.map(u => `<option value="${u.pubKey}">${u.pubKey.substring(0,10)}... ${u.pubKey === chain.currentOwner?'(当前持有)':''}</option>`).join('')}
+                </select>
+                <button class="btn-action" onclick="window.confirmPay('${chain.genesisHash}')">签署并全球同步</button>
             </div>
+            <p class="form-label">账本区块同步状态 (新->旧):</p>
+            ${chain.blocks.map((b, i) => `
+                <div class="block-card">
+                    <h4 style="font-size:9px; color:var(--accent); margin-bottom:4px;">Block #${i}</h4>
+                    <div style="font-family:monospace; font-size:9px; overflow:hidden; color:var(--text-dim);">Hash: ${b.hash}</div>
+                    <div style="font-family:monospace; font-size:10px; margin-top:4px; background:white; padding:6px; border-radius:4px; border:1px solid #eee;">${b.data}</div>
+                </div>
+            `).reverse().join('')}
         `;
     }
 }
 
-// 暴露给全局调用
-window.showChainDetail = (serial) => {
-    const chain = banknoteChains.find(c => c.serial === serial);
-    if (chain) openPanel('CHAIN', chain);
+// --- 阶段执行 ---
+
+document.getElementById('step-1').onclick = () => {
+    if (currentStep >= 1) return;
+    currentStep = 1;
+    updateStepUI(2);
+    
+    // 正确启动 30 个本地节点
+    for (let i = 0; i < 30; i++) {
+        const uuid = crypto.randomUUID();
+        const node = new P2PNode(uuid, connector, (n) => {
+            const card = document.getElementById(`card-${n.id}`);
+            if (card) {
+                card.querySelectorAll('.slot').forEach((s, idx) => s.classList.toggle('active', idx < n.peers.size));
+            }
+        });
+        localNodes.push(node);
+        const card = document.createElement('div');
+        card.id = `card-${uuid}`; card.className = 'node-card';
+        card.innerHTML = `<div style="font-size:8px; font-weight:700; color:var(--text-dim);">${uuid.substring(0,13)}...</div><div class="slots">${'<div class="slot"></div>'.repeat(5)}</div>`;
+        card.onclick = () => openPanel('NODE', node);
+        document.getElementById('grid').appendChild(card);
+    }
+    setInterval(() => localNodes.forEach(n => n.tick()), 5000);
 };
 
-window.showUserDetailByPubKey = (pubKey) => {
-    const user = accountManager.accounts.find(u => u.pubKey === pubKey);
-    if (user) openPanel('USER', user);
+connector.onDiscovery((uuid) => {
+    if (localNodes.find(n => n.id === uuid)) return;
+    if (document.getElementById(`card-${uuid}`)) return;
+    const card = document.createElement('div');
+    card.id = `card-${uuid}`; card.className = 'node-card';
+    card.style.borderColor = '#10b981';
+    card.innerHTML = `<div style="font-size:8px; font-weight:700; color:#10b981;">REMOTE</div><div style="font-size:7px; color:var(--text-dim);">${uuid.substring(0,13)}...</div>`;
+    document.getElementById('grid').appendChild(card);
+});
+
+document.getElementById('step-2').onclick = async () => {
+    if (currentStep < 1 || currentStep >= 2) return;
+    currentStep = 2;
+    updateStepUI(3);
+    // 正确启动 30 个加密身份
+    for(let i=0; i<30; i++) await accountManager.createIdentity();
+    renderUsersTab();
 };
 
-function updateUI(node, pulse = false) {
-    const card = document.getElementById(`card-${node.id}`);
-    if (!card) return;
-    const slots = card.querySelectorAll('.slot');
-    slots.forEach((s, i) => { s.classList.toggle('active', i < node.peers.size); });
-    let badge = card.querySelector('.msg-badge');
-    if (!badge) { badge = document.createElement('span'); badge.className = 'msg-badge'; card.appendChild(badge); }
-    badge.textContent = node.msgCount > 0 ? `RX: ${node.msgCount}` : '';
-    if (pulse) { card.classList.add('pulse'); setTimeout(() => card.classList.remove('pulse'), 600); }
-    const uc = card.querySelector('.user-count');
-    if (uc && currentStep >= 2) { uc.textContent = `${accountManager.getUsersForNode(node.id).length} Users`; uc.style.display = 'block'; }
-}
+document.getElementById('step-3').onclick = async () => {
+    if (currentStep < 2 || currentStep >= 3) return;
+    currentStep = 3;
+    updateStepUI(4);
+    
+    const issuerPk = "Issuer-Global-Root";
+    // 正确启动 500 条原子资产链
+    for (let s = 1; s <= 500; s++) {
+        const genData = `GENESIS\nIssuer: AOB-Lab\n${issuerPk}`;
+        const hash = await BlockchainUtils.sha256(genData + Math.random() + s);
+        const genesis = { type: 'GENESIS', data: genData, hash: hash, parentIndex: -1 };
+        
+        const chain = new BanknoteChain(s, genesis);
+        const randUser = accountManager.accounts[Math.floor(Math.random() * accountManager.accounts.length)];
+        await chain.addTransferBlock("ISSUER-ROOT-KEY", randUser.pubKey);
+        
+        connector.root.get('chains').get(hash).put({
+            serial: s,
+            denomination: chain.denomination,
+            blocks: JSON.stringify(chain.blocks)
+        });
+    }
+};
+
+// --- 全局渲染逻辑 ---
 
 function renderUsersTab() {
-    if (currentStep < 2 || !userGrid) return;
-    const accounts = accountManager.accounts;
-    userGrid.innerHTML = accounts.map(acc => `
-        <div class="user-profile-card" onclick="window.showUserDetailByPubKey('${acc.pubKey}')">
-            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 6px;">Crypto Identity (Public Key):</div>
-            <div class="user-pubkey-label" title="${acc.pubKey}">
-                ${acc.pubKey.substring(0, 12)}...
-            </div>
-            <div style="margin-top: 10px; font-size: 9px; color: var(--text-dim);">
-                所属节点: ${acc.nodeIds.map(nid => nid.split('-').pop()).join(', ')}
-            </div>
+    const container = document.getElementById('user-list-container');
+    if (!container) return;
+    container.innerHTML = accountManager.accounts.map(u => `
+        <div class="user-profile-card" onclick="window.showUserDetailByPubKey('${u.pubKey}')">
+            <div style="font-size:9px; font-weight:800; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">PK Identity</div>
+            <div style="font-size:12px; font-weight:800; color:var(--accent); font-family:monospace; word-break:break-all;">${u.pubKey.substring(0, 20)}...</div>
         </div>
     `).join('');
 }
 
 function renderBlockchainTab() {
-    if (currentStep < 3 || !chainGrid) return;
-    const stats = { 1: 0, 5: 0, 10: 0, 20: 0, 50: 0 };
-    banknoteChains.forEach(c => stats[c.denomination]++);
-
-    chainGrid.innerHTML = `
-        <div style="background:white; padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid var(--border);">
-            <h3 style="font-size:12px; margin-bottom:12px; color:var(--text-dim);">全网 500 条链概况</h3>
-            <div style="display:flex; gap:10px;">
-                ${Object.entries(stats).map(([val, count]) => `
-                    <div style="flex:1; background:#f8fafc; padding:8px; border-radius:6px; text-align:center; border:1px solid #f1f5f9;">
-                        <div style="font-size:9px; color:var(--text-dim);">$${val}</div>
-                        <div style="font-size:14px; font-weight:bold; color:var(--accent);">${count}</div>
-                    </div>
-                `).join('')}
-            </div>
+    const container = document.getElementById('blockchain-list-container');
+    if (!container) return;
+    container.innerHTML = `<div class="chain-grid">${banknoteChains.map(c => `
+        <div class="chain-mini-card" onclick="window.showChainDetail('${c.genesisHash}')">
+            <div style="font-size:12px; font-weight:700; color:var(--accent);">$${c.denomination}</div>
+            <div style="font-size:7px; color:var(--text-dim); font-family:monospace;">${c.genesisHash.substring(0, 8)}</div>
         </div>
-        <div class="chain-grid">
-            ${banknoteChains.map(c => `
-                <div class="chain-mini-card" title="SN: ${c.serial} | Owner: ${c.currentOwner}" onclick="window.showChainDetail(${c.serial})">
-                    <div class="val">$${c.denomination}</div>
-                    <div class="owner">${c.currentOwner.substring(0, 6)}</div>
-                </div>
-            `).join('')}
-        </div>
-    `;
+    `).join('')}</div>`;
 }
 
-async function startStep1() {
-    if (currentStep >= 1) return;
-    currentStep = 1; localStorage.setItem('atomic_step_v3', 1);
-    step1Btn.classList.add('completed'); step2Btn.classList.add('active'); grid.classList.add('active');
-    for (let i = 1; i <= 30; i++) {
-        const id = `${sessionPrefix}-${String(i).padStart(2, '0')}`;
-        const node = new P2PNode(id, connector, updateUI);
-        nodes.push(node);
-        const card = document.createElement('div');
-        card.id = `card-${id}`; card.className = 'node-card';
-        card.innerHTML = `<span class="user-count" style="display:none">0 Users</span><span class="id">${id}</span><div class="slots">${'<div class="slot"></div>'.repeat(5)}</div>`;
-        card.onclick = () => openPanel('NODE', node);
-        grid.appendChild(card);
-    }
-    setInterval(() => nodes.forEach(n => n.tick()), 3000);
-}
+// --- Window 全局绑定 ---
 
-async function startStep2() {
-    if (currentStep < 1 || currentStep >= 2) return;
-    currentStep = 2; localStorage.setItem('atomic_step_v3', 2);
-    step2Btn.classList.add('completed'); step3Btn.classList.add('active'); step3Btn.style.opacity = "1";
-    await accountManager.ensureAccountsCreated();
-    renderUsersTab();
-    nodes.forEach(n => updateUI(n));
-}
+window.showChainDetail = (hash) => openPanel('CHAIN', banknoteChains.find(c => c.genesisHash === hash));
+window.showUserDetailByPubKey = (pk) => openPanel('USER', accountManager.accounts.find(u => u.pubKey === pk));
+window.fillRandom = () => {
+    const acc = accountManager.accounts[Math.floor(Math.random() * accountManager.accounts.length)];
+    if (acc) document.getElementById('pay-target').value = acc.pubKey;
+};
+window.confirmPay = async (hash) => {
+    const chain = banknoteChains.find(c => c.genesisHash === hash);
+    const target = document.getElementById('pay-target').value;
+    const signerPk = document.getElementById('pay-signer').value;
+    const signer = accountManager.accounts.find(u => u.pubKey === signerPk);
 
-async function startStep3() {
-    if (currentStep < 2 || currentStep >= 3) return;
-    guideText.textContent = "正在生成 500 条创世链并分发...";
+    if (!target) return alert("请选择接收人公钥");
+    await chain.addTransferBlock(signer.privKey, target);
     
-    const definition = `Definition: Each SN (1-500) corresponds to a unique chain. Denominations: 1-100: $1, 101-200: $5, 201-300: $10, 301-400: $20, 401-500: $50. Issuer: ${accountManager.superUser.pubKey}.`;
-    const H = await BlockchainUtils.sha256(definition);
-    const superUser = accountManager.superUser;
-    const normalUsers = accountManager.accounts;
-
-    const chains = [];
-    for (let s = 1; s <= 500; s++) {
-        const genesisData = `${H}\n${s}\n${superUser.pubKey}`;
-        const genesisHash = await BlockchainUtils.sha256(genesisData);
-        const chain = new BanknoteChain(s, { type: 'GENESIS', data: genesisData, hash: genesisHash });
-        const recipient = normalUsers[Math.floor(Math.random() * normalUsers.length)];
-        // 使用更新后的 addTransferBlock
-        await chain.addTransferBlock(superUser.privKey, recipient.pubKey);
-        chains.push(chain);
+    connector.root.get('chains').get(hash).get('blocks').put(JSON.stringify(chain.blocks));
+    
+    const sid = hash.substring(0, 8);
+    if (localNodes.length > 0) {
+        localNodes[0].broadcast(`Asset ${sid} flowed to ${target.substring(0,8)}... signed by ${signerPk.substring(0,8)}...`);
     }
-    banknoteChains = chains;
-    nodes[0].broadcast(`[AOB] 500 chains deployed.`);
-    currentStep = 3; localStorage.setItem('atomic_step_v3', 3);
-    localStorage.setItem(`atomic_chains_${sessionPrefix}`, JSON.stringify(chains));
-    step3Btn.classList.add('completed');
-    guideText.textContent = "原子所有权区块已部署。点击链方块查看详情。";
-    renderBlockchainTab();
-    renderUsersTab();
-}
-
-step1Btn.onclick = startStep1;
-step2Btn.onclick = startStep2;
-step3Btn.onclick = startStep3;
-
-document.getElementById('p-close').onclick = () => { activeItem = null; panel.classList.remove('open'); };
-
-document.getElementById('p-broadcast').onclick = () => {
-    const txt = document.getElementById('p-msg').value.trim();
-    const userName = document.getElementById('p-user-select').value;
-    if (activeItem && activeItem.type === 'NODE' && txt && userName) {
-        const user = accountManager.accounts.find(a => a.id === userName);
-        activeItem.data.broadcast(`[From ${user.pubKey.substring(0, 6)}...] ${txt}`);
-        document.getElementById('p-msg').value = '';
-    }
+    renderPanel();
 };
 
-window.onload = async () => {
-    if (currentStep >= 1) {
-        const savedStep = currentStep; currentStep = 0; await startStep1();
-        if (savedStep >= 2) { currentStep = 1; await startStep2(); }
-        if (savedStep >= 3) {
-            const saved = localStorage.getItem(`atomic_chains_${sessionPrefix}`);
-            if (saved) {
-                const raw = JSON.parse(saved);
-                banknoteChains = raw.map(r => {
-                    const bc = new BanknoteChain(r.serial, r.blocks[0]);
-                    bc.blocks = r.blocks; return bc;
-                });
-                currentStep = 3; step3Btn.classList.add('completed'); renderBlockchainTab();
-            }
-        }
-    }
-};
+document.getElementById('p-close').onclick = () => { activeItem = null; document.getElementById('side-panel').classList.remove('open'); };
+window.onload = () => { document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.getAttribute('data-tab')))); };
