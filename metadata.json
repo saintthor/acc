@@ -1,5 +1,5 @@
 {
-  "name": "Atomic Ownership P2P Simulator",
-  "description": "Vanilla JS P2P network simulator for Atomic Ownership Blockchains.",
+  "name": "Atomic Ownership Lab",
+  "description": "基于 AOB 协议的原子所有权区块链仿真实验室（无框架极简实现版）",
   "requestFramePermissions": []
 }

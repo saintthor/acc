@@ -1,1 +1,1 @@
-// Empty file to prevent compilation interference.
+// 文件已迁移至 index.html

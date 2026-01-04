@@ -3,213 +3,394 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atomic MESH - 引导式 AOB 实验室</title>
-    <style>
-        :root {
-            --bg: #f8fafc;
-            --card: #ffffff;
-            --accent: #4f46e5;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --text: #0f172a;
-            --text-dim: #64748b;
-            --border: #e2e8f0;
-            --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            overflow: hidden;
-            height: 100vh;
-        }
-
-        #app { display: flex; height: 100vh; width: 100vw; overflow: hidden; flex-direction: column; }
-
-        /* 引导式页头 */
-        .edu-header {
-            background: white;
-            border-bottom: 1px solid var(--border);
-            padding: 20px 40px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        #ready-status-container {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            min-height: 24px;
-        }
-
-        .status-ready {
-            font-size: 10px;
-            background: #f0fdf4;
-            color: var(--success);
-            padding: 2px 10px;
-            border-radius: 99px;
-            border: 1px solid #dcfce7;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .instruction-box {
-            background: #f8fafc;
-            padding: 12px 16px;
-            border-radius: 8px;
-            border-left: 4px solid var(--accent);
-        }
-
-        #instruction-text {
-            font-size: 13px;
-            line-height: 1.5;
-            color: var(--text);
-        }
-
-        .step-actions {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .btn-step {
-            padding: 8px 20px;
-            border-radius: 8px;
-            background: var(--accent);
-            color: white;
-            border: none;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
-        }
-        .btn-step:hover:not(.inactive) { transform: translateY(-1px); background: #4338ca; }
-        .btn-step.inactive {
-            background: #f1f5f9;
-            color: #94a3b8;
-            cursor: not-allowed;
-            box-shadow: none;
-            border: 1px solid var(--border);
-        }
-
-        #project-intro { overflow: hidden; transition: max-height 0.3s ease; max-height: 500px; }
-        #project-intro.collapsed { max-height: 0; }
-        .intro-text { font-size: 11px; color: var(--text-dim); padding: 6px 0; border-top: 1px dashed var(--border); margin-top: 6px; }
-        .toggle-intro { font-size: 10px; color: var(--accent); cursor: pointer; background: none; border: none; text-decoration: underline; padding: 0; text-align: left; margin-top: 4px; }
-
-        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .tabs-nav { display: flex; background: white; padding: 0 40px; border-bottom: 1px solid var(--border); gap: 32px; }
-        .tab-btn { padding: 12px 0; font-size: 13px; font-weight: 600; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: 0.2s; background: none; border: none; outline: none; }
-        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-        .tab-content { flex: 1; padding: 20px 40px; overflow-y: auto; display: none; }
-        .tab-content.active { display: block; }
-
-        /* 网格优化：调小 minmax 以容纳更多节点 */
-        .node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-        .node-card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer; transition: 0.2s; position: relative; }
-        .node-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
-        .slots { display: flex; gap: 2px; margin-top: 6px; }
-        .slot { width: 6px; height: 6px; border-radius: 1px; background: #f1f5f9; border: 1px solid var(--border); }
-        .slot.active { background: var(--success); border-color: var(--success); }
-
-        .chain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(65px, 1fr)); gap: 6px; }
-        .chain-mini-card { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 4px; text-align: center; cursor: pointer; height: 42px; display: flex; flex-direction: column; justify-content: center; transition: 0.1s; }
-        .chain-mini-card:hover { border-color: var(--accent); transform: scale(1.05); z-index: 5; }
-        .chain-mini-card.owned { border: 2px solid var(--success); background: #f0fdf4; font-weight: bold; }
-
-        .user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-        .user-profile-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; }
-        .user-profile-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
-
-        .side-panel { width: 0; opacity: 0; background: #fff; border-left: 1px solid var(--border); height: 100vh; transition: 0.25s ease; display: flex; flex-direction: column; position: fixed; right: 0; top: 0; z-index: 100; }
-        .side-panel.open { width: 440px; opacity: 1; box-shadow: -10px 0 40px rgba(0,0,0,0.1); }
-        .panel-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        .panel-body { flex: 1; overflow-y: auto; padding: 20px; }
-
-        .payment-form { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 20px; }
-        .form-label { font-size: 10px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; display: block; text-transform: uppercase; }
-        .form-input { width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 10px; font-size: 12px; font-family: monospace; }
-        .btn-action { background: var(--accent); color: white; border: none; padding: 8px; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; font-size: 12px; }
-
-        .block-card { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; position: relative; }
-    </style>
+    <title>Atomic MESH - AOB 实验室</title>
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
-  }
-}
-</script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        :root { --accent: #4f46e5; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #0f172a; overflow: hidden; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        @keyframes ping-slow { 0% { transform: scale(1); opacity: 1; } 70%, 100% { transform: scale(2); opacity: 0; } }
+        .ping-anim { animation: ping-slow 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .asset-block, .user-block { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 0.75rem; border: 1px solid #e2e8f0; background: white; }
+        .asset-block:hover, .user-block:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .node-pulse { animation: pulse-bg 0.4s ease-out; }
+        @keyframes pulse-bg { 0% { background-color: rgba(79, 70, 229, 0.2); border-color: var(--accent); } 100% { background-color: white; border-color: #e2e8f0; } }
+        .clickable-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; transition: color 0.2s; }
+        .clickable-link:hover { color: var(--accent); }
+    </style>
 </head>
-<body>
-    <div id="app">
-        <header class="edu-header">
-            <div id="ready-status-container"></div>
-            <div class="instruction-box">
-                <div id="instruction-text">
-                    <strong>欢迎来到 AOB 实验室！</strong><br>
-                    第一步我们需要建立底层的 P2P 通信网络。点击下方按钮，系统将启动 30 个 UUID 虚拟节点，通过公共中继实现互联。
-                </div>
-                <button class="toggle-intro" onclick="toggleIntro()">[展开/折叠 AOB 核心理论]</button>
-                <div id="project-intro" class="collapsed">
-                    <div class="intro-text">
-                        AOB (Atomic Ownership Blockchain) 为每一项独立资产分配专属区块链。资产转移通过追加新块实现，无需全网共识即可达成秒级验证。
-                    </div>
-                </div>
+<body class="h-screen flex">
+
+    <aside class="w-20 flex flex-col items-center py-8 gap-8 border-r border-slate-200 bg-white z-20">
+        <div class="text-indigo-600 mb-4" data-lucide="zap" stroke-width="3"></div>
+        <button onclick="switchTab('nodes')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all active bg-indigo-50 text-indigo-600" id="btn-nodes"><i data-lucide="network"></i></button>
+        <button onclick="switchTab('users')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-users"><i data-lucide="users"></i></button>
+        <button onclick="switchTab('chains')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-chains"><i data-lucide="database"></i></button>
+        <button onclick="switchTab('terminal')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-terminal"><i data-lucide="terminal"></i></button>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0">
+        <header class="h-20 border-b border-slate-200 px-8 flex items-center justify-between bg-white z-10">
+            <div class="flex items-center gap-3">
+                <i data-lucide="layers" class="text-indigo-600"></i>
+                <h1 class="text-lg font-extrabold tracking-tight uppercase text-slate-900">Atomic MESH <span class="text-slate-400 font-light">| AOB Lab</span></h1>
             </div>
-            <div class="step-actions">
-                <div id="active-step-container">
-                    <button id="step-1" class="btn-step">1. 建立 P2P 网络</button>
-                </div>
-                <div id="future-steps" style="display: none;">
-                    <button id="step-2" class="btn-step inactive">2. 生成 30 个加密身份</button>
-                    <button id="step-3" class="btn-step inactive">3. 创建 500 条区块链</button>
-                </div>
+            <div id="setup-controls" class="flex gap-3">
+                <button onclick="initNodes()" id="step1" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-indigo-100"><i data-lucide="cpu" size="16"></i> 启动网络</button>
+                <button onclick="initUsers()" id="step2" class="hidden bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-slate-200"><i data-lucide="fingerprint" size="16"></i> 初始化身份</button>
+                <button onclick="initAssets()" id="step3" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-emerald-100"><i data-lucide="coins" size="16"></i> 发行资产 (500)</button>
+                <div id="status-ready" class="hidden px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold text-sm flex items-center gap-2"><i data-lucide="shield-check" size="16"></i> 仿真就绪</div>
             </div>
         </header>
 
-        <main class="main-content">
-            <nav class="tabs-nav">
-                <button class="tab-btn active" data-tab="tab-nodes">核心节点</button>
-                <button class="tab-btn" data-tab="tab-users">加密身份</button>
-                <button class="tab-btn" data-tab="tab-blockchain">资产账目</button>
-                <button class="tab-btn" data-tab="tab-fastlane">全网日志</button>
-            </nav>
+        <section id="main-content" class="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
+            <div id="tab-nodes" class="tab-content active"><div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-3" id="node-grid"></div></div>
+            <div id="tab-users" class="tab-content"><div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-12 gap-4" id="user-grid"></div></div>
+            <div id="tab-chains" class="tab-content"><div class="grid grid-cols-4 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-15 gap-3" id="chain-grid"></div></div>
+            <div id="tab-terminal" class="tab-content h-full"><div class="bg-white rounded-[2rem] p-8 border border-slate-200 h-full flex flex-col overflow-hidden shadow-sm"><div class="flex-1 overflow-y-auto mono text-[12px] space-y-3 custom-scrollbar" id="terminal-output"></div></div></div>
+        </section>
+    </main>
 
-            <div id="tab-nodes" class="tab-content active"><div id="grid" class="node-grid"></div></div>
-            <div id="tab-users" class="tab-content"><div id="user-list-container" class="user-grid"></div></div>
-            <div id="tab-blockchain" class="tab-content"><div id="blockchain-list-container"></div></div>
-            <div id="tab-fastlane" class="tab-content">
-                <div id="global-log-stream" style="background: #0f172a; color: #10b981; font-family: monospace; padding: 16px; border-radius: 8px; height: 100%; overflow-y: auto; font-size: 11px;"></div>
-            </div>
-        </main>
-
-        <aside id="side-panel" class="side-panel">
-            <div class="panel-header">
-                <div>
-                    <h2 id="p-title" style="font-size: 16px; font-weight: 800; color: var(--accent);">详情</h2>
-                    <span id="p-subtitle" style="font-size: 10px; color: var(--text-dim);">Identity & Asset View</span>
-                </div>
-                <button id="p-close" style="background:none; border:none; font-size: 24px; cursor:pointer;">&times;</button>
-            </div>
-            <div id="p-body" class="panel-body"></div>
-        </aside>
+    <div id="drawer" class="fixed inset-0 z-50 flex justify-end bg-slate-900/10 backdrop-blur-sm transition-opacity opacity-0 pointer-events-none">
+        <div id="drawer-content" class="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col p-10 transform translate-x-full transition-transform duration-300">
+            <div class="flex justify-between items-center mb-8"><h2 class="text-xl font-extrabold text-slate-900" id="drawer-title">详情</h2><button onclick="closeDrawer()" class="p-2 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="x"></i></button></div>
+            <div id="drawer-body" class="flex-1 overflow-y-auto custom-scrollbar"></div>
+        </div>
     </div>
-    <script type="module" src="index.js"></script>
+
     <script>
-        function toggleIntro() { document.getElementById('project-intro').classList.toggle('collapsed'); }
+        const CONFIG = {
+            NODE_COUNT: 40,
+            USER_COUNT: 48,
+            ASSET_COUNT: 500,
+            SYNC_KEY: 'aob_mesh_v2_' + Math.floor(Date.now()/300000).toString()
+        };
+
+        let nodes = [];
+        let identities = [];
+        let foundingIssuer = null;
+        let chains = [];
+        let activeDrawerNodeId = null;
+        
+        const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+        const db = gun.get(CONFIG.SYNC_KEY);
+
+        function generatePK() {
+            return "0x" + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join("");
+        }
+
+        async function sha256(text) {
+            const buffer = new TextEncoder().encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+        }
+
+        function log(msg, type = 'info', nodeId = 'SYS') {
+            const terminal = document.getElementById('terminal-output');
+            const time = new Date().toLocaleTimeString();
+            const colors = { in: 'text-indigo-600', out: 'text-amber-600', info: 'text-slate-500' };
+            const div = document.createElement('div');
+            div.className = `flex gap-4 border-b border-slate-50 pb-2 ${colors[type]}`;
+            div.innerHTML = `<span class="text-slate-300 font-mono">[${time}]</span> <span class="font-bold w-20 truncate">${nodeId}</span> <span>${msg}</span>`;
+            terminal.prepend(div);
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('bg-indigo-50', 'text-indigo-600', 'text-slate-400'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            const btn = document.getElementById(`btn-${tabId}`);
+            btn.classList.add('bg-indigo-50', 'text-indigo-600');
+        }
+
+        function initNodes() {
+            const grid = document.getElementById('node-grid');
+            grid.innerHTML = '';
+            nodes = Array.from({ length: CONFIG.NODE_COUNT }, () => ({
+                id: `N-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+                peers: [],
+                messageHistory: []
+            }));
+            nodes.forEach((n) => {
+                const el = document.createElement('div');
+                el.id = `node-view-${n.id}`;
+                el.className = 'p-3 border border-slate-200 bg-white hover:border-indigo-200 cursor-pointer flex flex-col items-center justify-center aspect-square rounded-xl transition-all shadow-sm';
+                el.onclick = () => openNodeDetails(n.id);
+                el.innerHTML = `<div class="w-1.5 h-1.5 mb-2 rounded-full bg-indigo-500 ping-anim"></div><div class="mono text-[9px] font-bold">${n.id}</div>`;
+                grid.appendChild(el);
+            });
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+            log(`Mesh 网络启动成功。`, 'info');
+            lucide.createIcons();
+            switchTab('nodes');
+
+            db.get('broadcasts').map().on((val) => {
+                if (val && val.chainHash && val.block) {
+                    const block = JSON.parse(val.block);
+                    receiveBroadcastLocally(val.chainHash, block, val.fromNode, val.senderPK);
+                }
+            });
+        }
+
+        function initUsers() {
+            identities = Array.from({ length: CONFIG.USER_COUNT }, () => {
+                const pub = generatePK();
+                return { pub, priv: `pri_${pub}` };
+            });
+            foundingIssuer = { pub: generatePK() };
+
+            const grid = document.getElementById('user-grid');
+            grid.innerHTML = '';
+            identities.forEach(id => {
+                const el = document.createElement('div');
+                el.className = 'user-block cursor-pointer shadow-sm';
+                el.onclick = () => openUserDetails(id.pub);
+                el.innerHTML = `<div class="mono text-[8px] text-slate-400">${id.pub.substring(0, 10)}...</div><div id="balance-${id.pub}" class="text-[8px] font-black text-indigo-600 mt-1">$0</div>`;
+                grid.appendChild(el);
+            });
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+            log(`已初始化创始发行人及 ${CONFIG.USER_COUNT} 位用户。`, 'info');
+            switchTab('users');
+        }
+
+        async function initAssets() {
+            log(`正在全网分发创世资产 (GENESIS)...`, 'info');
+            for (let i = 1; i <= CONFIG.ASSET_COUNT; i++) {
+                const owner = identities[Math.floor(Math.random() * identities.length)];
+                const ts = Date.now();
+                const genesisData = `GENESIS|RECIPIENT|${owner.pub}|SN|${i}`;
+                const hash = await sha256(genesisData + ts);
+                const block = { type: 'GENESIS', data: genesisData, hash, timestamp: ts };
+                const sourceNode = nodes[Math.floor(Math.random() * nodes.length)];
+                
+                const chain = { serial: i, denomination: 10, genesisHash: hash, currentOwner: owner.pub, blocks: [block] };
+                chains.push(chain);
+                renderChain(chain);
+                updateBalance(owner.pub);
+                
+                db.get('broadcasts').set({ 
+                    chainHash: hash, 
+                    block: JSON.stringify(block), 
+                    fromNode: sourceNode.id, 
+                    senderPK: foundingIssuer.pub 
+                });
+            }
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('status-ready').classList.remove('hidden');
+            log(`500 原子资产链已全网广播，由创始发行人签署。`, 'info');
+            switchTab('chains');
+        }
+
+        function receiveBroadcastLocally(chainHash, block, fromNodeId, originalSenderPK) {
+            // 只有转移块需要更新全局链状态
+            if (block.type === 'TRANSFER') {
+                processNetworkBlock(chainHash, block);
+            }
+
+            // AOB 节点日志仅记录“所有权转移”指令。GENESIS 块不作为流转日志。
+            if (block.type !== 'TRANSFER') return;
+
+            const chain = chains.find(c => c.genesisHash === chainHash);
+            const receiverPK = block.data.split('|')[2];
+            
+            // 模拟 Mesh 网络中部分节点随机接收该广播
+            const sampleSize = Math.floor(Math.random() * 8) + 4;
+            const receivers = [...nodes].sort(() => 0.5 - Math.random()).slice(0, sampleSize);
+            
+            receivers.forEach(node => {
+                const logEntry = { 
+                    time: new Date().toLocaleTimeString(), 
+                    type: block.type, 
+                    chainHash: chainHash, 
+                    serial: chain ? chain.serial : '?', 
+                    sender: originalSenderPK, // 签署者即上一个主人
+                    receiver: receiverPK, 
+                    fromNode: fromNodeId 
+                };
+                node.messageHistory.unshift(logEntry);
+                if (node.messageHistory.length > 50) node.messageHistory.pop();
+                
+                const el = document.getElementById(`node-view-${node.id}`);
+                if (el) { 
+                    el.classList.add('node-pulse'); 
+                    setTimeout(() => el.classList.remove('node-pulse'), 400); 
+                }
+            });
+
+            if (activeDrawerNodeId) renderNodeDetailsContent(nodes.find(n => n.id === activeDrawerNodeId));
+        }
+
+        function renderChain(chain) {
+            const grid = document.getElementById('chain-grid');
+            let el = document.getElementById(`chain-card-${chain.genesisHash}`);
+            if (!el) { el = document.createElement('div'); el.id = `chain-card-${chain.genesisHash}`; grid.appendChild(el); }
+            el.className = `asset-block cursor-pointer shadow-sm ${chain.blocks.length > 1 ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`;
+            el.onclick = () => openAssetDetails(chain.genesisHash);
+            el.innerHTML = `<div class="text-[9px] font-black text-indigo-600 mb-0.5">$${chain.denomination}</div><div class="mono text-[7px] text-slate-400 font-bold">#${chain.serial}</div>`;
+        }
+
+        function updateBalance(pub) {
+            const bal = chains.filter(c => c.currentOwner === pub).reduce((acc, c) => acc + c.denomination, 0);
+            const el = document.getElementById(`balance-${pub}`);
+            if (el) el.innerText = `$${bal}`;
+        }
+
+        async function transferAsset(genesisHash, toPubKey) {
+            const chain = chains.find(c => c.genesisHash === genesisHash);
+            if (!chain) return;
+            
+            const prevBlock = chain.blocks[chain.blocks.length - 1];
+            const senderPK = chain.currentOwner; // 这里是指令的签署者（原主人）
+            const ts = Date.now();
+            const data = `TRANSFER|TO|${toPubKey}|PREV|${prevBlock.hash}`;
+            const hash = await sha256(data + ts);
+            const newBlock = { type: 'TRANSFER', data, hash, timestamp: ts };
+            const sourceNode = nodes[Math.floor(Math.random() * nodes.length)];
+            
+            // 将指令广播到全网
+            db.get('broadcasts').set({ 
+                chainHash: genesisHash, 
+                block: JSON.stringify(newBlock), 
+                fromNode: sourceNode.id, 
+                senderPK: senderPK 
+            });
+            
+            log(`签署并广播转移指令 (From: ${senderPK.substring(0,8)}...)`, 'out', sourceNode.id);
+            closeDrawer();
+        }
+
+        function processNetworkBlock(chainHash, block) {
+            const chain = chains.find(c => c.genesisHash === chainHash);
+            if (!chain) return;
+            // 幂等性检查
+            if (chain.blocks.find(b => b.hash === block.hash)) return;
+            
+            const oldOwner = chain.currentOwner;
+            chain.blocks.push(block);
+            chain.currentOwner = block.data.split('|')[2];
+            
+            renderChain(chain);
+            updateBalance(oldOwner);
+            updateBalance(chain.currentOwner);
+        }
+
+        function closeDrawer() { document.getElementById('drawer').classList.add('opacity-0', 'pointer-events-none'); document.getElementById('drawer-content').classList.add('translate-x-full'); activeDrawerNodeId = null; }
+        function openDrawer(title) { document.getElementById('drawer-title').innerText = title; document.getElementById('drawer').classList.remove('opacity-0', 'pointer-events-none'); document.getElementById('drawer-content').classList.remove('translate-x-full'); }
+
+        function openNodeDetails(nodeId) {
+            activeDrawerNodeId = nodeId;
+            openDrawer(`节点报告: ${nodeId}`);
+            renderNodeDetailsContent(nodes.find(n => n.id === nodeId));
+        }
+
+        function renderNodeDetailsContent(node) {
+            const body = document.getElementById('drawer-body');
+            body.innerHTML = `
+                <div class="p-6 bg-slate-900 text-white rounded-2xl mb-6 shadow-xl">
+                    <div class="text-[10px] opacity-40 uppercase mb-1">Mesh Node ID</div>
+                    <div class="text-2xl font-black mono text-indigo-400 tracking-tighter">${node.id}</div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">原子所有权流转日志 (TRANSFER ONLY)</h3>
+                    <div class="space-y-4">
+                        ${node.messageHistory.length === 0 ? '<div class="text-slate-300 text-[10px] text-center py-10">暂未接收到转移指令广播</div>' : ''}
+                        ${node.messageHistory.map(h => `
+                            <div class="p-4 border border-slate-100 bg-white rounded-xl mono text-[10px] shadow-sm">
+                                <div class="flex justify-between mb-3">
+                                    <span class="text-indigo-600 font-black px-2 py-0.5 bg-indigo-50 rounded">${h.type}</span>
+                                    <span class="text-slate-400">${h.time}</span>
+                                </div>
+                                <div class="space-y-2.5">
+                                    <div class="flex flex-col">
+                                        <span class="opacity-40 text-[8px] uppercase font-bold">Signer (Previous Owner)</span>
+                                        <span class="font-bold text-slate-900 break-all leading-tight mt-0.5">${h.sender}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <span class="opacity-40 text-[8px] uppercase font-bold">Beneficiary (New Owner)</span>
+                                        <span class="font-bold text-slate-900 break-all leading-tight mt-0.5">${h.receiver}</span>
+                                    </div>
+                                    <div class="text-[8px] text-slate-400 pt-2 border-t border-slate-50 mt-1 flex justify-between">
+                                        <span>SOURCE: ${h.fromNode}</span>
+                                        <span class="clickable-link text-indigo-500 font-bold" onclick="openAssetDetails('${h.chainHash}')">TRACE S-${h.serial}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function openUserDetails(pubKey) {
+            const isIssuer = (foundingIssuer && pubKey === foundingIssuer.pub);
+            openDrawer(isIssuer ? "创始发行人控制台" : "所有权看板");
+            const userAssets = chains.filter(c => c.currentOwner === pubKey);
+            document.getElementById('drawer-body').innerHTML = `
+                <div class="p-6 ${isIssuer ? 'bg-slate-900' : 'bg-indigo-600'} text-white rounded-2xl mb-8 shadow-xl">
+                    <div class="text-[10px] opacity-60 uppercase mb-1 font-bold">${isIssuer ? 'Original Assets' : 'Account Balance'}</div>
+                    <div class="text-5xl font-black mb-6">$${userAssets.length * 10}</div>
+                    <div class="mono text-[8px] break-all ${isIssuer ? 'bg-slate-800' : 'bg-indigo-700/50'} p-3 rounded-xl leading-relaxed">${pubKey}</div>
+                </div>
+                <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">持有原子链 (${userAssets.length})</h3>
+                <div class="grid grid-cols-4 gap-2">
+                    ${userAssets.map(c => `<div onclick="openAssetDetails('${c.genesisHash}')" class="p-2 border border-slate-200 rounded-lg text-center bg-white cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all"><div class="text-[10px] font-bold text-indigo-600">$10</div><div class="text-[7px] text-slate-400 mono">#${c.serial}</div></div>`).join('')}
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function openAssetDetails(genesisHash) {
+            const chain = chains.find(c => c.genesisHash === genesisHash);
+            openDrawer(`资产溯源 #${chain.serial}`);
+            document.getElementById('drawer-body').innerHTML = `
+                <div class="p-6 bg-slate-900 text-white rounded-2xl mb-8 shadow-xl">
+                    <div class="text-[10px] opacity-40 uppercase mb-1">Current Owner Public Key</div>
+                    <div class="mono text-[9px] break-all mb-4 text-indigo-400 font-bold leading-relaxed clickable-link" onclick="openUserDetails('${chain.currentOwner}')">${chain.currentOwner}</div>
+                    <div class="text-[10px] opacity-40 uppercase mb-1">Chain Genesis Hash</div>
+                    <div class="mono text-[9px] opacity-60 break-all leading-relaxed">${chain.genesisHash}</div>
+                </div>
+                <div class="mb-8">
+                    <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">完整流转历史 (全区块回溯)</h3>
+                    <div class="space-y-3">
+                        ${chain.blocks.map((b, i) => `
+                            <div class="p-4 bg-white border border-slate-100 rounded-xl mono text-[9px] shadow-sm">
+                                <div class="flex justify-between font-bold mb-2">
+                                    <span class="text-indigo-600">${i===0?'GENESIS BLOCK':'TRANSFER BLOCK'}</span>
+                                    <span class="text-slate-300 font-medium">${new Date(b.timestamp).toLocaleTimeString()}</span>
+                                </div>
+                                <div class="truncate opacity-50 mb-1">DATA: ${b.data}</div>
+                                <div class="truncate text-slate-400">HASH: ${b.hash}</div>
+                            </div>
+                        `).reverse().join('')}
+                    </div>
+                </div>
+                <div class="p-6 bg-white border-2 border-slate-900 rounded-2xl shadow-xl">
+                    <h3 class="font-black text-sm mb-4 uppercase tracking-tighter">签署并发布转移指令</h3>
+                    <div class="text-[10px] text-slate-400 mb-2 uppercase font-bold">New Beneficiary Public Key</div>
+                    <select id="t-sel" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-[10px] mb-4 font-mono outline-none focus:ring-2 focus:ring-indigo-500">
+                        ${identities.filter(id => id.pub !== chain.currentOwner).map(id => `<option value="${id.pub}">${id.pub.substring(0,32)}...</option>`).join('')}
+                    </select>
+                    <button onclick="transferAsset('${chain.genesisHash}', document.getElementById('t-sel').value)" class="w-full p-4 bg-slate-900 text-white font-black rounded-xl text-sm shadow-lg hover:bg-black transition-all active:scale-[0.98]">
+                        SIGN & BROADCAST
+                    </button>
+                    <p class="text-[8px] text-slate-400 mt-3 text-center uppercase tracking-tight">转移指令将由当前所有者公钥签署</p>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+        lucide.createIcons();
     </script>
 </body>
 </html>
