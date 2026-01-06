@@ -20,8 +20,8 @@
         .node-pulse { animation: pulse-bg 0.6s ease-out; }
         @keyframes pulse-bg { 0% { background-color: rgba(79, 70, 229, 0.4); border-color: #4f46e5; } 100% { background-color: white; border-color: #e2e8f0; } }
         
-        /* 强化手形指针 */
-        [onclick], button, select, .card, .tab-btn, a { cursor: pointer !important; }
+        /* 强制手形指针：涵盖所有可点击元素及其子元素 */
+        [onclick], [onclick] *, button, button *, select, option, .card, .card *, .tab-btn { cursor: pointer !important; }
         
         .btn-active { @apply bg-indigo-600 text-white shadow-md hover:bg-indigo-700; }
         .btn-inactive { @apply bg-slate-100 text-slate-400 cursor-not-allowed; }
@@ -88,7 +88,7 @@
             NODE_COUNT: 30,
             USER_COUNT: 30,
             BANKNOTE_COUNT: 100,
-            SYNC_KEY: 'aob_v7_mesh',
+            SYNC_KEY: 'aob_v8_remote_mesh',
             DEFINITION_DOC: `Define each blockchain as a banknote, with the data structure of its genesis block as: H\\nS\\nK, where: H is the SHA256 hash of this document (Base64); K is the public key of the super user (Base64), fixed at [超级用户的公钥]; S is the serial number, with the following correspondence to the banknote's denomination:
 1-20 1
 21-40 5
@@ -102,8 +102,7 @@
             nodes: [],
             users: [], 
             chains: [],
-            step: 0,
-            globalSeen: new Set()
+            step: 0
         };
 
         let activeOverlayId = null;
@@ -143,17 +142,20 @@
 
         function saveState() {
             const data = { ...state };
-            data.globalSeen = Array.from(state.globalSeen);
-            data.nodes = state.nodes.map(n => ({...n, seenIds: Array.from(n.seenIds)}));
-            localStorage.setItem('aob_v7_lab_state', JSON.stringify(data));
+            data.nodes = state.nodes.map(n => ({...n, seenIds: Array.from(n.seenIds || [])}));
+            localStorage.setItem('aob_v8_lab_state', JSON.stringify(data));
         }
 
         function loadState() {
-            const saved = localStorage.getItem('aob_v7_lab_state');
+            const saved = localStorage.getItem('aob_v8_lab_state');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                state = { ...parsed, globalSeen: new Set(parsed.globalSeen || []) };
-                state.nodes = state.nodes.map(n => ({...n, seenIds: new Set(n.seenIds || [])}));
+                state = { ...parsed };
+                state.nodes = state.nodes.map(n => {
+                    n.seenIds = new Set(n.seenIds || []);
+                    setupNodeRemoteListener(n);
+                    return n;
+                });
                 refreshUIFromState();
             } else {
                 updateStepUI();
@@ -198,9 +200,65 @@
             lucide.createIcons();
         }
 
-        // --- Network Logic ---
-        async function initNetwork() {
-            appendStatus("建立 P2P 网络中...");
+        // --- P2P Mesh Core (Strictly Remote Transmission) ---
+        function setupNodeRemoteListener(node) {
+            // 每个节点监听 Gun.js 中针对它的消息路径
+            // 这确保了网页内节点与远端节点之间的通信路径完全一致
+            db.get('node_inbox').get(node.id).map().on((json, messageId) => {
+                if (!json) return;
+                const block = JSON.parse(json);
+                onNodeReceive(node, block);
+            });
+        }
+
+        function onNodeReceive(node, block) {
+            if (node.seenIds.has(block.id)) return;
+            node.seenIds.add(block.id);
+
+            // 1. 记录日志
+            node.logs.unshift({
+                id: block.id,
+                type: block.type,
+                time: new Date().toLocaleTimeString(),
+                data: block.data || '(无内容)'
+            });
+            if (node.logs.length > 50) node.logs.pop();
+
+            // 2. 视觉反馈
+            const el = document.getElementById(`node-${node.id}`);
+            if (el) {
+                el.classList.remove('node-pulse');
+                void el.offsetWidth;
+                el.classList.add('node-pulse');
+            }
+            if (activeOverlayId === node.id) {
+                const logsContainer = document.getElementById('node-logs-container');
+                if (logsContainer) logsContainer.innerHTML = renderNodeLogs(node);
+            }
+
+            // 3. 业务逻辑应用：区块链更新
+            if (block.type === '支付区块') {
+                const chain = state.chains.find(c => c.blocks.some(b => b.id === block.prevId));
+                if (chain && !chain.blocks.find(b => b.id === block.id)) {
+                    chain.blocks.push(block);
+                    chain.currentOwner = block.target;
+                    renderChains();
+                    updateAllBalances();
+                    saveState();
+                }
+            }
+
+            // 4. 转发给邻节点 (必须通过 Gun 远端传输)
+            node.neighbors.forEach(neighborId => {
+                // 模拟网络延迟并使用 Gun 写入邻居收件箱
+                setTimeout(() => {
+                    db.get('node_inbox').get(neighborId).get(block.id).put(JSON.stringify(block));
+                }, 50 + Math.random() * 200);
+            });
+        }
+
+        function initNetwork() {
+            appendStatus("初始化 P2P 远端传输网...");
             state.nodes = Array.from({ length: CONFIG.NODE_COUNT }, () => ({
                 id: crypto.randomUUID(),
                 neighbors: [],
@@ -220,15 +278,16 @@
                 }
             });
 
+            state.nodes.forEach(setupNodeRemoteListener);
             state.step = 1;
-            appendStatus("网络就绪。");
+            appendStatus("网路就绪，节点间通过 Gun.js 媒介通信。");
             saveState();
             refreshUIFromState();
             switchTab('nodes');
         }
 
         async function initUsers() {
-            appendStatus("创建加密用户账户...");
+            appendStatus("创建加密用户...");
             superUser = await generateKeyPair(); 
             for (let i = 0; i < CONFIG.USER_COUNT; i++) {
                 const u = await generateKeyPair();
@@ -240,14 +299,13 @@
                 state.users.push(u);
             }
             state.step = 2;
-            appendStatus("用户账户就绪。");
             saveState();
             refreshUIFromState();
             switchTab('users');
         }
 
         async function initBanknotes() {
-            appendStatus("依照 AOB 定义文件创建 100 条区块链...");
+            appendStatus("依照 AOB 定义发行钞票并由超级用户分发...");
             if (!superUser) superUser = await generateKeyPair(); 
             const h = await getHash(CONFIG.DEFINITION_DOC);
             const k = superUser.pub;
@@ -272,81 +330,18 @@
 
                 state.chains.push({ serial: s, denomination: den, currentOwner: target.pub, genesisId: gId, blocks: [genesis, pay] });
                 
-                startBroadcast(genesis, state.nodes[0].id);
-                startBroadcast(pay, state.nodes[0].id);
+                // 将区块注入第一个节点开始 P2P 传播
+                const entryId = state.nodes[0].id;
+                db.get('node_inbox').get(entryId).get(genesis.id).put(JSON.stringify(genesis));
+                db.get('node_inbox').get(entryId).get(pay.id).put(JSON.stringify(pay));
             }
 
-            superUser = null; 
+            superUser = null; // 销毁超级用户
             state.step = 3;
-            appendStatus("资产发行与分发就绪。");
             saveState();
             refreshUIFromState();
             switchTab('chains');
         }
-
-        // --- Mesh Broadcast Simulation ---
-        function startBroadcast(block, nodeId) {
-            if (!state.globalSeen.has(block.id)) {
-                state.globalSeen.add(block.id);
-                db.get('messages').get(block.id).put({ json: JSON.stringify(block), entryNode: nodeId });
-            }
-            relayToNode(nodeId, block);
-        }
-
-        function relayToNode(nodeId, block) {
-            const node = state.nodes.find(n => n.id === nodeId);
-            if (!node || node.seenIds.has(block.id)) return;
-
-            // 1. 记录广播消息
-            node.seenIds.add(block.id);
-            node.logs.unshift({ 
-                id: block.id, 
-                type: block.type, 
-                time: new Date().toLocaleTimeString(),
-                data: block.data || '(空内容)'
-            });
-            if (node.logs.length > 50) node.logs.pop();
-
-            // 2. UI 视觉反馈与实时刷新详情页
-            const el = document.getElementById(`node-${node.id}`);
-            if (el) {
-                el.classList.remove('node-pulse');
-                void el.offsetWidth;
-                el.classList.add('node-pulse');
-            }
-            
-            if (activeOverlayId === node.id) {
-                const logsContainer = document.getElementById('node-logs-container');
-                if (logsContainer) logsContainer.innerHTML = renderNodeLogs(node);
-            }
-
-            // 3. 递归传播
-            node.neighbors.forEach(neighborId => {
-                setTimeout(() => relayToNode(neighborId, block), 50 + Math.random() * 150);
-            });
-        }
-
-        db.get('messages').map().on((data, id) => {
-            if (!data || state.globalSeen.has(id)) return;
-            const block = JSON.parse(data.json);
-            state.globalSeen.add(id);
-
-            if (block.type === '支付区块') {
-                const chain = state.chains.find(c => c.blocks.some(b => b.id === block.prevId));
-                if (chain && !chain.blocks.find(b => b.id === block.id)) {
-                    chain.blocks.push(block);
-                    chain.currentOwner = block.target;
-                    renderChains();
-                    updateAllBalances();
-                }
-            }
-            
-            // 如果本地节点集不为空，通过一个合适的本地节点进入 Mesh 传播
-            if (state.nodes.length > 0) {
-                const entryNodeId = state.nodes.find(n => n.id === data.entryNode) ? data.entryNode : state.nodes[0].id;
-                relayToNode(entryNodeId, block);
-            }
-        });
 
         // --- Rendering ---
         function renderNodeLogs(node) {
@@ -356,10 +351,10 @@
                         <span class="text-indigo-600 font-bold uppercase">${l.type}</span>
                         <span class="text-slate-300 shrink-0">${l.time}</span>
                     </div>
-                    <div class="text-[7px] text-slate-400 truncate opacity-50">ID: ${l.id}</div>
-                    <div class="text-[9px] text-slate-700 break-all bg-slate-50 p-2 rounded-md border border-slate-200 whitespace-pre-wrap leading-tight shadow-inner">${l.data}</div>
+                    <div class="text-[7px] text-slate-400 truncate opacity-60">ID: ${l.id}</div>
+                    <div class="text-[9px] text-slate-600 break-all bg-slate-50 p-2 rounded-md border border-slate-100 whitespace-pre-wrap leading-relaxed shadow-inner">${l.data}</div>
                 </div>
-            `).join('') || '<div class="text-xs text-slate-300 italic py-4 text-center">暂无记录</div>';
+            `).join('') || '<div class="text-xs text-slate-300 italic py-6 text-center">暂无接收记录</div>';
         }
 
         function renderNodes() {
@@ -427,7 +422,7 @@
             });
         }
 
-        // --- Navigation ---
+        // --- Interaction ---
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('nav button').forEach(b => {
@@ -461,24 +456,24 @@
             body.innerHTML = `
                 <div class="grid grid-cols-2 gap-4">
                     <div class="p-4 bg-slate-50 rounded-xl">
-                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">邻居连接</div>
-                        <div class="mono text-[9px] break-all text-slate-600">${node.neighbors.map(n=>n.substring(0,6)).join(', ')}</div>
+                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">邻居连接数</div>
+                        <div class="mono text-[10px] font-bold text-slate-600">${node.neighbors.length} PEERS</div>
                     </div>
                     <div class="p-4 bg-slate-50 rounded-xl">
-                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">本地用户数</div>
+                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">本地驻留用户</div>
                         <div class="mono text-[10px] font-bold text-slate-600">${nodeUsers.length}</div>
                     </div>
                 </div>
                 <div class="space-y-4">
-                    <h3 class="text-xs font-black uppercase text-slate-400 flex items-center justify-between px-1">广播流水 (全量显示) <span>${node.logs.length} 条</span></h3>
+                    <h3 class="text-xs font-black uppercase text-slate-400 flex items-center justify-between px-1">收到的远端广播 (Full Log) <span>${node.logs.length}</span></h3>
                     <div id="node-logs-container" class="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                         ${renderNodeLogs(node)}
                     </div>
                 </div>
                 <div class="p-6 bg-slate-900 rounded-2xl space-y-4 shadow-xl">
-                    <h3 class="text-xs font-black text-indigo-400 uppercase tracking-wider">Mesh 网络广播测试</h3>
-                    <textarea id="test-msg" class="w-full bg-slate-800 border-none rounded-xl p-4 text-xs text-white mono outline-none h-24 placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 transition-all" placeholder="在此输入需要广播的完整数据内容..."></textarea>
-                    <button onclick="broadcastTest('${node.id}')" class="w-full py-4 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/40">发起全网异步广播</button>
+                    <h3 class="text-xs font-black text-indigo-400 uppercase tracking-widest">向邻居广播数据 (Remote Relay)</h3>
+                    <textarea id="test-msg" class="w-full bg-slate-800 border-none rounded-xl p-4 text-xs text-white mono outline-none h-24 placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 transition-all" placeholder="在此输入完整区块数据或任意文本内容..."></textarea>
+                    <button onclick="broadcastTest('${node.id}')" class="w-full py-4 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/40">发起全网远端广播</button>
                 </div>
             `;
             lucide.createIcons();
@@ -493,7 +488,8 @@
                 data: val, 
                 timestamp: Date.now() 
             };
-            startBroadcast(block, nodeId);
+            // 通过当前节点收件箱触发 P2P 流程
+            db.get('node_inbox').get(nodeId).get(block.id).put(JSON.stringify(block));
             document.getElementById('test-msg').value = '';
         }
 
@@ -505,22 +501,22 @@
             body.innerHTML = `
                 <div class="p-8 bg-indigo-600 rounded-3xl text-white space-y-4 shadow-xl shadow-indigo-200">
                     <div>
-                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">账户总额</div>
+                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">持有资产余额</div>
                         <div class="text-5xl font-black">$${userChains.reduce((s, c) => s + c.denomination, 0)}</div>
                     </div>
                     <div>
-                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">Base64 公钥 ID</div>
+                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">账户公钥 ID (Base64)</div>
                         <div class="mono text-[9px] break-all bg-white/10 p-4 rounded-xl mt-2 select-all leading-relaxed">${user.pub}</div>
                     </div>
                 </div>
                 <div class="space-y-4">
-                    <h3 class="text-xs font-black uppercase text-slate-400">Mesh 接入节点</h3>
+                    <h3 class="text-xs font-black uppercase text-slate-400">网络接入节点 (Mesh Portals)</h3>
                     <div class="flex flex-wrap gap-2">
                         ${user.nodes.map(n => `<span class="px-3 py-1.5 bg-slate-100 rounded-lg mono text-[9px] font-bold text-slate-600">${n.substring(0,12)}...</span>`).join('')}
                     </div>
                 </div>
                 <div class="space-y-4">
-                    <h3 class="text-xs font-black uppercase text-slate-400">持有的原子区块链 (${userChains.length})</h3>
+                    <h3 class="text-xs font-black uppercase text-slate-400">拥有的资产链 (${userChains.length})</h3>
                     <div class="grid grid-cols-4 gap-2">
                         ${userChains.map(c => `<div onclick="openChainOverlay('${c.genesisId}')" class="p-2 border border-slate-100 rounded-lg text-center bg-white hover:border-indigo-500 transition-colors"><div class="text-xs font-bold text-indigo-600">$${c.denomination}</div><div class="text-[8px] text-slate-400 mono">#${c.serial}</div></div>`).join('')}
                     </div>
@@ -531,7 +527,7 @@
 
         function openChainOverlay(genesisId) {
             const chain = state.chains.find(c => c.genesisId === genesisId);
-            openOverlay(`区块链详情 #${chain.serial}`);
+            openOverlay(`区块链溯源 #${chain.serial}`);
             const body = document.getElementById('overlay-body');
             const others = state.users.filter(u => u.pub !== chain.currentOwner);
             const randomTarget = others[Math.floor(Math.random() * others.length)].pub;
@@ -539,15 +535,15 @@
             body.innerHTML = `
                 <div class="p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
                     <div class="flex justify-between items-center mb-4">
-                        <div class="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-full uppercase tracking-tighter">面值 $${chain.denomination}</div>
+                        <div class="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-full uppercase tracking-tighter">面额 $${chain.denomination}</div>
                         <div class="text-[10px] text-slate-400 font-bold mono">CHAIN-ROOT: ${chain.genesisId.substring(0, 10)}...</div>
                     </div>
-                    <div class="text-[10px] text-slate-400 uppercase font-bold mb-1">当前物权所有者 (PubKey)</div>
+                    <div class="text-[10px] text-slate-400 uppercase font-bold mb-1">当前物权所有者 (Owner)</div>
                     <div class="mono text-[9px] break-all p-3 bg-white rounded-xl border border-emerald-200 select-all leading-relaxed">${chain.currentOwner}</div>
                 </div>
 
                 <div class="space-y-4">
-                    <h3 class="text-xs font-black uppercase text-slate-400 px-1">原子账本区块历史</h3>
+                    <h3 class="text-xs font-black uppercase text-slate-400 px-1">原子账本流水</h3>
                     <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                         ${chain.blocks.map((b, i) => `
                             <div class="p-4 bg-white border border-slate-100 rounded-xl space-y-2">
@@ -555,22 +551,22 @@
                                     <span class="text-[10px] font-black uppercase ${i===0?'text-indigo-600':'text-emerald-600'}">${b.type}</span>
                                     <span class="text-[9px] text-slate-300 mono">${new Date(b.timestamp).toLocaleTimeString()}</span>
                                 </div>
-                                <div class="mono text-[8px] text-slate-400 break-all bg-slate-50 p-2 rounded leading-tight">ID: ${b.id}</div>
+                                <div class="mono text-[8px] text-slate-400 break-all bg-slate-50 p-2 rounded leading-tight">B-ID: ${b.id}</div>
                             </div>
                         `).reverse().join('')}
                     </div>
                 </div>
 
                 <div class="p-6 bg-slate-900 rounded-2xl space-y-4">
-                    <h3 class="text-xs font-black text-indigo-400 uppercase">执行原子支付</h3>
+                    <h3 class="text-xs font-black text-indigo-400 uppercase">执行原子物权支付</h3>
                     <div>
-                        <div class="text-[10px] text-slate-500 font-bold mb-2 uppercase">目标收款人 ID</div>
+                        <div class="text-[10px] text-slate-500 font-bold mb-2 uppercase">目标收款用户公钥 ID</div>
                         <select id="pay-target" class="w-full bg-slate-800 border-none rounded-xl p-4 text-[9px] text-white mono outline-none">
                             ${others.map(u => `<option value="${u.pub}" ${u.pub === randomTarget ? 'selected' : ''}>${u.pub.substring(0, 48)}...</option>`).join('')}
                         </select>
                     </div>
                     <button onclick="payBanknote('${chain.genesisId}')" class="w-full py-4 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/50">
-                        签署并广播物权指令
+                        生成支付区块并全网广播
                     </button>
                 </div>
             `;
@@ -581,9 +577,9 @@
             const chain = state.chains.find(c => c.genesisId === genesisId);
             const targetPub = document.getElementById('pay-target').value;
             const currentUser = state.users.find(u => u.pub === chain.currentOwner);
-            if (!currentUser) return alert("本地账户环境缺失。");
+            if (!currentUser) return alert("账户密钥不匹配。");
 
-            appendStatus("执行 Web Crypto 数字签名...");
+            appendStatus("正在进行数字签署...");
             const privKey = await importPrivateKey(currentUser.priv);
             const prev = chain.blocks[chain.blocks.length - 1];
             const ts = Date.now();
@@ -592,10 +588,11 @@
 
             const block = { id: sig, type: '支付区块', data: data, prevId: prev.id, target: targetPub, timestamp: ts, signature: sig };
 
-            // 立即发起广播
-            startBroadcast(block, currentUser.nodes[0]);
+            // 通过用户绑定的首个节点入口发起 P2P 广播
+            const entryId = currentUser.nodes[0];
+            db.get('node_inbox').get(entryId).get(block.id).put(JSON.stringify(block));
             
-            appendStatus("支付区块已签署并进入 P2P 网络。");
+            appendStatus("支付指令已提交并进入 Mesh 传播。");
             closeOverlay();
             saveState();
         }
