@@ -10,386 +10,597 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         :root { --accent: #4f46e5; }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #0f172a; overflow: hidden; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow: hidden; }
         .mono { font-family: 'JetBrains Mono', monospace; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        @keyframes ping-slow { 0% { transform: scale(1); opacity: 1; } 70%, 100% { transform: scale(2); opacity: 0; } }
-        .ping-anim { animation: ping-slow 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .asset-block, .user-block { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 0.75rem; border: 1px solid #e2e8f0; background: white; }
-        .asset-block:hover, .user-block:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .node-pulse { animation: pulse-bg 0.4s ease-out; }
-        @keyframes pulse-bg { 0% { background-color: rgba(79, 70, 229, 0.2); border-color: var(--accent); } 100% { background-color: white; border-color: #e2e8f0; } }
-        .clickable-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; transition: color 0.2s; }
-        .clickable-link:hover { color: var(--accent); }
+        .node-pulse { animation: pulse-bg 0.6s ease-out; }
+        @keyframes pulse-bg { 0% { background-color: rgba(79, 70, 229, 0.4); border-color: #4f46e5; } 100% { background-color: white; border-color: #e2e8f0; } }
+        
+        /* 强化手形指针 */
+        [onclick], button, select, .card, .tab-btn, a { cursor: pointer !important; }
+        
+        .btn-active { @apply bg-indigo-600 text-white shadow-md hover:bg-indigo-700; }
+        .btn-inactive { @apply bg-slate-100 text-slate-400 cursor-not-allowed; }
+        .card { @apply bg-white border border-slate-200 rounded-xl p-4 transition-all hover:shadow-md hover:border-indigo-300; }
+        
+        .log-entry { transition: all 0.3s ease; }
     </style>
 </head>
-<body class="h-screen flex">
+<body class="h-screen flex flex-col">
 
-    <aside class="w-20 flex flex-col items-center py-8 gap-8 border-r border-slate-200 bg-white z-20">
-        <div class="text-indigo-600 mb-4" data-lucide="zap" stroke-width="3"></div>
-        <button onclick="switchTab('nodes')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all active bg-indigo-50 text-indigo-600" id="btn-nodes"><i data-lucide="network"></i></button>
-        <button onclick="switchTab('users')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-users"><i data-lucide="users"></i></button>
-        <button onclick="switchTab('chains')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-chains"><i data-lucide="database"></i></button>
-        <button onclick="switchTab('terminal')" class="nav-btn p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-all" id="btn-terminal"><i data-lucide="terminal"></i></button>
-    </aside>
-
-    <main class="flex-1 flex flex-col min-w-0">
-        <header class="h-20 border-b border-slate-200 px-8 flex items-center justify-between bg-white z-10">
-            <div class="flex items-center gap-3">
-                <i data-lucide="layers" class="text-indigo-600"></i>
-                <h1 class="text-lg font-extrabold tracking-tight uppercase text-slate-900">Atomic MESH <span class="text-slate-400 font-light">| AOB Lab</span></h1>
+    <header class="bg-white border-b border-slate-200 p-6 z-30">
+        <div class="max-w-7xl mx-auto">
+            <div id="intro-text" class="mb-6 space-y-1">
+                <p class="text-sm font-semibold text-indigo-600 uppercase tracking-wider">AOB Protocol Simulation</p>
+                <h1 class="text-2xl font-extrabold text-slate-900">Atomic Ownership Blockchains 仿真实验室</h1>
+                <div id="status-history" class="text-xs text-slate-500 font-medium leading-relaxed">提示：本项目演示 AOB 原子所有权协议。请点击“建立网络”开始。</div>
             </div>
-            <div id="setup-controls" class="flex gap-3">
-                <button onclick="initNodes()" id="step1" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-indigo-100"><i data-lucide="cpu" size="16"></i> 启动网络</button>
-                <button onclick="initUsers()" id="step2" class="hidden bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-slate-200"><i data-lucide="fingerprint" size="16"></i> 初始化身份</button>
-                <button onclick="initAssets()" id="step3" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-emerald-100"><i data-lucide="coins" size="16"></i> 发行资产 (500)</button>
-                <div id="status-ready" class="hidden px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 font-bold text-sm flex items-center gap-2"><i data-lucide="shield-check" size="16"></i> 仿真就绪</div>
+            
+            <div id="controls" class="flex flex-wrap gap-3">
+                <button id="btn-init-net" onclick="initNetwork()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"><i data-lucide="network" size="16"></i> 建立网络</button>
+                <button id="btn-init-users" onclick="initUsers()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="users" size="16"></i> 创建用户账户</button>
+                <button id="btn-init-assets" onclick="initBanknotes()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="banknote" size="16"></i> 创建区块链钞票</button>
+                <button id="btn-init-channels" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="zap" size="16"></i> 建立快速通道</button>
             </div>
-        </header>
+        </div>
+    </header>
 
-        <section id="main-content" class="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
-            <div id="tab-nodes" class="tab-content active"><div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-10 gap-3" id="node-grid"></div></div>
-            <div id="tab-users" class="tab-content"><div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-12 gap-4" id="user-grid"></div></div>
-            <div id="tab-chains" class="tab-content"><div class="grid grid-cols-4 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-15 gap-3" id="chain-grid"></div></div>
-            <div id="tab-terminal" class="tab-content h-full"><div class="bg-white rounded-[2rem] p-8 border border-slate-200 h-full flex flex-col overflow-hidden shadow-sm"><div class="flex-1 overflow-y-auto mono text-[12px] space-y-3 custom-scrollbar" id="terminal-output"></div></div></div>
-        </section>
+    <nav class="bg-white border-b border-slate-100 px-6">
+        <div class="max-w-7xl mx-auto flex gap-8">
+            <button onclick="switchTab('nodes')" id="tab-btn-nodes" class="tab-btn py-4 text-sm font-bold border-b-2 border-indigo-600 text-indigo-600 flex items-center gap-2"><i data-lucide="server" size="14"></i> 节点</button>
+            <button onclick="switchTab('users')" id="tab-btn-users" class="tab-btn py-4 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="user-square" size="14"></i> 用户</button>
+            <button onclick="switchTab('chains')" id="tab-btn-chains" class="tab-btn py-4 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="box" size="14"></i> 区块链</button>
+            <button onclick="switchTab('channels')" id="tab-btn-channels" class="tab-btn py-4 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="git-branch" size="14"></i> 通道</button>
+        </div>
+    </nav>
+
+    <main class="flex-1 overflow-hidden relative bg-slate-50/50">
+        <div id="tab-nodes" class="tab-content active h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="node-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+        <div id="tab-users" class="tab-content h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="user-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+        <div id="tab-chains" class="tab-content h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="chain-grid" class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 xl:grid-cols-10 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+        <div id="tab-channels" class="tab-content h-full p-8 flex items-center justify-center text-slate-300 font-bold uppercase tracking-widest italic">
+            Experimental Feature: Fast Channels (Coming Soon)
+        </div>
     </main>
 
-    <div id="drawer" class="fixed inset-0 z-50 flex justify-end bg-slate-900/10 backdrop-blur-sm transition-opacity opacity-0 pointer-events-none">
-        <div id="drawer-content" class="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col p-10 transform translate-x-full transition-transform duration-300">
-            <div class="flex justify-between items-center mb-8"><h2 class="text-xl font-extrabold text-slate-900" id="drawer-title">详情</h2><button onclick="closeDrawer()" class="p-2 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="x"></i></button></div>
-            <div id="drawer-body" class="flex-1 overflow-y-auto custom-scrollbar"></div>
+    <div id="overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-end transition-opacity opacity-0 pointer-events-none">
+        <div id="overlay-content" class="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col p-10 transform translate-x-full transition-transform duration-300">
+            <div class="flex justify-between items-center mb-8">
+                <h2 id="overlay-title" class="text-xl font-extrabold text-slate-900 uppercase tracking-tight">详情</h2>
+                <button onclick="closeOverlay()" class="p-2 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div id="overlay-body" class="flex-1 overflow-y-auto custom-scrollbar space-y-6"></div>
         </div>
     </div>
 
     <script>
         const CONFIG = {
-            NODE_COUNT: 40,
-            USER_COUNT: 48,
-            ASSET_COUNT: 500,
-            SYNC_KEY: 'aob_mesh_v2_' + Math.floor(Date.now()/300000).toString()
+            NODE_COUNT: 30,
+            USER_COUNT: 30,
+            BANKNOTE_COUNT: 100,
+            SYNC_KEY: 'aob_v7_mesh',
+            DEFINITION_DOC: `Define each blockchain as a banknote, with the data structure of its genesis block as: H\\nS\\nK, where: H is the SHA256 hash of this document (Base64); K is the public key of the super user (Base64), fixed at [超级用户的公钥]; S is the serial number, with the following correspondence to the banknote's denomination:
+1-20 1
+21-40 5
+41-60 10
+61-80 20
+81-100 50`
         };
 
-        let nodes = [];
-        let identities = [];
-        let foundingIssuer = null;
-        let chains = [];
-        let activeDrawerNodeId = null;
-        
+        // --- State ---
+        let state = {
+            nodes: [],
+            users: [], 
+            chains: [],
+            step: 0,
+            globalSeen: new Set()
+        };
+
+        let activeOverlayId = null;
+        let superUser = null;
         const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
         const db = gun.get(CONFIG.SYNC_KEY);
 
-        function generatePK() {
-            return "0x" + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join("");
+        // --- Crypto & Utils ---
+        async function getHash(text) {
+            const msgUint8 = new TextEncoder().encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
         }
 
-        async function sha256(text) {
-            const buffer = new TextEncoder().encode(text);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+        async function generateKeyPair() {
+            const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+            const pubExport = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+            const privExport = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+            return {
+                pub: btoa(String.fromCharCode(...new Uint8Array(pubExport))),
+                priv: btoa(String.fromCharCode(...new Uint8Array(privExport))),
+                keyPair 
+            };
         }
 
-        function log(msg, type = 'info', nodeId = 'SYS') {
-            const terminal = document.getElementById('terminal-output');
-            const time = new Date().toLocaleTimeString();
-            const colors = { in: 'text-indigo-600', out: 'text-amber-600', info: 'text-slate-500' };
+        async function importPrivateKey(b64) {
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return await crypto.subtle.importKey("pkcs8", bytes.buffer, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+        }
+
+        async function signData(data, privateKey) {
+            const signature = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, privateKey, new TextEncoder().encode(data));
+            return btoa(String.fromCharCode(...new Uint8Array(signature)));
+        }
+
+        function saveState() {
+            const data = { ...state };
+            data.globalSeen = Array.from(state.globalSeen);
+            data.nodes = state.nodes.map(n => ({...n, seenIds: Array.from(n.seenIds)}));
+            localStorage.setItem('aob_v7_lab_state', JSON.stringify(data));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('aob_v7_lab_state');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                state = { ...parsed, globalSeen: new Set(parsed.globalSeen || []) };
+                state.nodes = state.nodes.map(n => ({...n, seenIds: new Set(n.seenIds || [])}));
+                refreshUIFromState();
+            } else {
+                updateStepUI();
+            }
+        }
+
+        function appendStatus(text) {
+            const history = document.getElementById('status-history');
             const div = document.createElement('div');
-            div.className = `flex gap-4 border-b border-slate-50 pb-2 ${colors[type]}`;
-            div.innerHTML = `<span class="text-slate-300 font-mono">[${time}]</span> <span class="font-bold w-20 truncate">${nodeId}</span> <span>${msg}</span>`;
-            terminal.prepend(div);
+            div.textContent = text;
+            history.appendChild(div);
         }
 
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('bg-indigo-50', 'text-indigo-600', 'text-slate-400'));
-            document.getElementById(`tab-${tabId}`).classList.add('active');
-            const btn = document.getElementById(`btn-${tabId}`);
-            btn.classList.add('bg-indigo-50', 'text-indigo-600');
-        }
-
-        function initNodes() {
-            const grid = document.getElementById('node-grid');
-            grid.innerHTML = '';
-            nodes = Array.from({ length: CONFIG.NODE_COUNT }, () => ({
-                id: `N-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-                peers: [],
-                messageHistory: []
-            }));
-            nodes.forEach((n) => {
-                const el = document.createElement('div');
-                el.id = `node-view-${n.id}`;
-                el.className = 'p-3 border border-slate-200 bg-white hover:border-indigo-200 cursor-pointer flex flex-col items-center justify-center aspect-square rounded-xl transition-all shadow-sm';
-                el.onclick = () => openNodeDetails(n.id);
-                el.innerHTML = `<div class="w-1.5 h-1.5 mb-2 rounded-full bg-indigo-500 ping-anim"></div><div class="mono text-[9px] font-bold">${n.id}</div>`;
-                grid.appendChild(el);
-            });
-            document.getElementById('step1').classList.add('hidden');
-            document.getElementById('step2').classList.remove('hidden');
-            log(`Mesh 网络启动成功。`, 'info');
-            lucide.createIcons();
-            switchTab('nodes');
-
-            db.get('broadcasts').map().on((val) => {
-                if (val && val.chainHash && val.block) {
-                    const block = JSON.parse(val.block);
-                    receiveBroadcastLocally(val.chainHash, block, val.fromNode, val.senderPK);
+        function updateStepUI() {
+            const btns = [
+                document.getElementById('btn-init-net'),
+                document.getElementById('btn-init-users'),
+                document.getElementById('btn-init-assets'),
+                document.getElementById('btn-init-channels')
+            ];
+            btns.forEach((btn, i) => {
+                if (i < state.step) {
+                    btn.style.display = 'none';
+                } else if (i === state.step) {
+                    btn.disabled = false;
+                    btn.classList.add('btn-active');
+                    btn.classList.remove('btn-inactive');
+                } else {
+                    btn.disabled = true;
+                    btn.classList.add('btn-inactive');
+                    btn.classList.remove('btn-active');
                 }
             });
         }
 
-        function initUsers() {
-            identities = Array.from({ length: CONFIG.USER_COUNT }, () => {
-                const pub = generatePK();
-                return { pub, priv: `pri_${pub}` };
-            });
-            foundingIssuer = { pub: generatePK() };
+        function refreshUIFromState() {
+            updateStepUI();
+            if (state.nodes.length > 0) renderNodes();
+            if (state.users.length > 0) renderUsers();
+            if (state.chains.length > 0) renderChains();
+            updateAllBalances();
+            lucide.createIcons();
+        }
 
-            const grid = document.getElementById('user-grid');
-            grid.innerHTML = '';
-            identities.forEach(id => {
-                const el = document.createElement('div');
-                el.className = 'user-block cursor-pointer shadow-sm';
-                el.onclick = () => openUserDetails(id.pub);
-                el.innerHTML = `<div class="mono text-[8px] text-slate-400">${id.pub.substring(0, 10)}...</div><div id="balance-${id.pub}" class="text-[8px] font-black text-indigo-600 mt-1">$0</div>`;
-                grid.appendChild(el);
+        // --- Network Logic ---
+        async function initNetwork() {
+            appendStatus("建立 P2P 网络中...");
+            state.nodes = Array.from({ length: CONFIG.NODE_COUNT }, () => ({
+                id: crypto.randomUUID(),
+                neighbors: [],
+                logs: [],
+                seenIds: new Set()
+            }));
+
+            state.nodes.forEach((node, i) => {
+                const target = 4 + Math.floor(Math.random() * 2);
+                while (node.neighbors.length < target) {
+                    const peerIdx = Math.floor(Math.random() * state.nodes.length);
+                    const peerId = state.nodes[peerIdx].id;
+                    if (peerIdx !== i && !node.neighbors.includes(peerId)) {
+                        node.neighbors.push(peerId);
+                        state.nodes[peerIdx].neighbors.push(node.id);
+                    }
+                }
             });
-            document.getElementById('step2').classList.add('hidden');
-            document.getElementById('step3').classList.remove('hidden');
-            log(`已初始化创始发行人及 ${CONFIG.USER_COUNT} 位用户。`, 'info');
+
+            state.step = 1;
+            appendStatus("网络就绪。");
+            saveState();
+            refreshUIFromState();
+            switchTab('nodes');
+        }
+
+        async function initUsers() {
+            appendStatus("创建加密用户账户...");
+            superUser = await generateKeyPair(); 
+            for (let i = 0; i < CONFIG.USER_COUNT; i++) {
+                const u = await generateKeyPair();
+                u.nodes = [
+                    state.nodes[Math.floor(Math.random() * 10)].id,
+                    state.nodes[10 + Math.floor(Math.random() * 10)].id,
+                    state.nodes[20 + Math.floor(Math.random() * 10)].id
+                ];
+                state.users.push(u);
+            }
+            state.step = 2;
+            appendStatus("用户账户就绪。");
+            saveState();
+            refreshUIFromState();
             switchTab('users');
         }
 
-        async function initAssets() {
-            log(`正在全网分发创世资产 (GENESIS)...`, 'info');
-            for (let i = 1; i <= CONFIG.ASSET_COUNT; i++) {
-                const owner = identities[Math.floor(Math.random() * identities.length)];
+        async function initBanknotes() {
+            appendStatus("依照 AOB 定义文件创建 100 条区块链...");
+            if (!superUser) superUser = await generateKeyPair(); 
+            const h = await getHash(CONFIG.DEFINITION_DOC);
+            const k = superUser.pub;
+
+            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                let den = 1;
+                if (s > 20 && s <= 40) den = 5;
+                else if (s > 40 && s <= 60) den = 10;
+                else if (s > 60 && s <= 80) den = 20;
+                else if (s > 80) den = 50;
+
+                const gData = `${h}\n${s}\n${k}`;
+                const gId = await getHash(gData);
+                const genesis = { id: gId, type: 'GENESIS', data: gData, timestamp: Date.now() };
+
+                const target = state.users[Math.floor(Math.random() * state.users.length)];
                 const ts = Date.now();
-                const genesisData = `GENESIS|RECIPIENT|${owner.pub}|SN|${i}`;
-                const hash = await sha256(genesisData + ts);
-                const block = { type: 'GENESIS', data: genesisData, hash, timestamp: ts };
-                const sourceNode = nodes[Math.floor(Math.random() * nodes.length)];
+                const pData = `${gId}\n支付区块\n${ts}\n${target.pub}`;
+                const sig = await signData(pData, superUser.keyPair.privateKey);
                 
-                const chain = { serial: i, denomination: 10, genesisHash: hash, currentOwner: owner.pub, blocks: [block] };
-                chains.push(chain);
-                renderChain(chain);
-                updateBalance(owner.pub);
+                const pay = { id: sig, type: '支付区块', data: pData, prevId: gId, target: target.pub, timestamp: ts, signature: sig };
+
+                state.chains.push({ serial: s, denomination: den, currentOwner: target.pub, genesisId: gId, blocks: [genesis, pay] });
                 
-                db.get('broadcasts').set({ 
-                    chainHash: hash, 
-                    block: JSON.stringify(block), 
-                    fromNode: sourceNode.id, 
-                    senderPK: foundingIssuer.pub 
-                });
+                startBroadcast(genesis, state.nodes[0].id);
+                startBroadcast(pay, state.nodes[0].id);
             }
-            document.getElementById('step3').classList.add('hidden');
-            document.getElementById('status-ready').classList.remove('hidden');
-            log(`500 原子资产链已全网广播，由创始发行人签署。`, 'info');
+
+            superUser = null; 
+            state.step = 3;
+            appendStatus("资产发行与分发就绪。");
+            saveState();
+            refreshUIFromState();
             switchTab('chains');
         }
 
-        function receiveBroadcastLocally(chainHash, block, fromNodeId, originalSenderPK) {
-            // 只有转移块需要更新全局链状态
-            if (block.type === 'TRANSFER') {
-                processNetworkBlock(chainHash, block);
+        // --- Mesh Broadcast Simulation ---
+        function startBroadcast(block, nodeId) {
+            if (!state.globalSeen.has(block.id)) {
+                state.globalSeen.add(block.id);
+                db.get('messages').get(block.id).put({ json: JSON.stringify(block), entryNode: nodeId });
+            }
+            relayToNode(nodeId, block);
+        }
+
+        function relayToNode(nodeId, block) {
+            const node = state.nodes.find(n => n.id === nodeId);
+            if (!node || node.seenIds.has(block.id)) return;
+
+            // 1. 记录广播消息
+            node.seenIds.add(block.id);
+            node.logs.unshift({ 
+                id: block.id, 
+                type: block.type, 
+                time: new Date().toLocaleTimeString(),
+                data: block.data || '(空内容)'
+            });
+            if (node.logs.length > 50) node.logs.pop();
+
+            // 2. UI 视觉反馈与实时刷新详情页
+            const el = document.getElementById(`node-${node.id}`);
+            if (el) {
+                el.classList.remove('node-pulse');
+                void el.offsetWidth;
+                el.classList.add('node-pulse');
+            }
+            
+            if (activeOverlayId === node.id) {
+                const logsContainer = document.getElementById('node-logs-container');
+                if (logsContainer) logsContainer.innerHTML = renderNodeLogs(node);
             }
 
-            // AOB 节点日志仅记录“所有权转移”指令。GENESIS 块不作为流转日志。
-            if (block.type !== 'TRANSFER') return;
+            // 3. 递归传播
+            node.neighbors.forEach(neighborId => {
+                setTimeout(() => relayToNode(neighborId, block), 50 + Math.random() * 150);
+            });
+        }
 
-            const chain = chains.find(c => c.genesisHash === chainHash);
-            const receiverPK = block.data.split('|')[2];
-            
-            // 模拟 Mesh 网络中部分节点随机接收该广播
-            const sampleSize = Math.floor(Math.random() * 8) + 4;
-            const receivers = [...nodes].sort(() => 0.5 - Math.random()).slice(0, sampleSize);
-            
-            receivers.forEach(node => {
-                const logEntry = { 
-                    time: new Date().toLocaleTimeString(), 
-                    type: block.type, 
-                    chainHash: chainHash, 
-                    serial: chain ? chain.serial : '?', 
-                    sender: originalSenderPK, // 签署者即上一个主人
-                    receiver: receiverPK, 
-                    fromNode: fromNodeId 
-                };
-                node.messageHistory.unshift(logEntry);
-                if (node.messageHistory.length > 50) node.messageHistory.pop();
-                
-                const el = document.getElementById(`node-view-${node.id}`);
-                if (el) { 
-                    el.classList.add('node-pulse'); 
-                    setTimeout(() => el.classList.remove('node-pulse'), 400); 
+        db.get('messages').map().on((data, id) => {
+            if (!data || state.globalSeen.has(id)) return;
+            const block = JSON.parse(data.json);
+            state.globalSeen.add(id);
+
+            if (block.type === '支付区块') {
+                const chain = state.chains.find(c => c.blocks.some(b => b.id === block.prevId));
+                if (chain && !chain.blocks.find(b => b.id === block.id)) {
+                    chain.blocks.push(block);
+                    chain.currentOwner = block.target;
+                    renderChains();
+                    updateAllBalances();
                 }
-            });
-
-            if (activeDrawerNodeId) renderNodeDetailsContent(nodes.find(n => n.id === activeDrawerNodeId));
-        }
-
-        function renderChain(chain) {
-            const grid = document.getElementById('chain-grid');
-            let el = document.getElementById(`chain-card-${chain.genesisHash}`);
-            if (!el) { el = document.createElement('div'); el.id = `chain-card-${chain.genesisHash}`; grid.appendChild(el); }
-            el.className = `asset-block cursor-pointer shadow-sm ${chain.blocks.length > 1 ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`;
-            el.onclick = () => openAssetDetails(chain.genesisHash);
-            el.innerHTML = `<div class="text-[9px] font-black text-indigo-600 mb-0.5">$${chain.denomination}</div><div class="mono text-[7px] text-slate-400 font-bold">#${chain.serial}</div>`;
-        }
-
-        function updateBalance(pub) {
-            const bal = chains.filter(c => c.currentOwner === pub).reduce((acc, c) => acc + c.denomination, 0);
-            const el = document.getElementById(`balance-${pub}`);
-            if (el) el.innerText = `$${bal}`;
-        }
-
-        async function transferAsset(genesisHash, toPubKey) {
-            const chain = chains.find(c => c.genesisHash === genesisHash);
-            if (!chain) return;
+            }
             
-            const prevBlock = chain.blocks[chain.blocks.length - 1];
-            const senderPK = chain.currentOwner; // 这里是指令的签署者（原主人）
-            const ts = Date.now();
-            const data = `TRANSFER|TO|${toPubKey}|PREV|${prevBlock.hash}`;
-            const hash = await sha256(data + ts);
-            const newBlock = { type: 'TRANSFER', data, hash, timestamp: ts };
-            const sourceNode = nodes[Math.floor(Math.random() * nodes.length)];
-            
-            // 将指令广播到全网
-            db.get('broadcasts').set({ 
-                chainHash: genesisHash, 
-                block: JSON.stringify(newBlock), 
-                fromNode: sourceNode.id, 
-                senderPK: senderPK 
-            });
-            
-            log(`签署并广播转移指令 (From: ${senderPK.substring(0,8)}...)`, 'out', sourceNode.id);
-            closeDrawer();
-        }
+            // 如果本地节点集不为空，通过一个合适的本地节点进入 Mesh 传播
+            if (state.nodes.length > 0) {
+                const entryNodeId = state.nodes.find(n => n.id === data.entryNode) ? data.entryNode : state.nodes[0].id;
+                relayToNode(entryNodeId, block);
+            }
+        });
 
-        function processNetworkBlock(chainHash, block) {
-            const chain = chains.find(c => c.genesisHash === chainHash);
-            if (!chain) return;
-            // 幂等性检查
-            if (chain.blocks.find(b => b.hash === block.hash)) return;
-            
-            const oldOwner = chain.currentOwner;
-            chain.blocks.push(block);
-            chain.currentOwner = block.data.split('|')[2];
-            
-            renderChain(chain);
-            updateBalance(oldOwner);
-            updateBalance(chain.currentOwner);
-        }
-
-        function closeDrawer() { document.getElementById('drawer').classList.add('opacity-0', 'pointer-events-none'); document.getElementById('drawer-content').classList.add('translate-x-full'); activeDrawerNodeId = null; }
-        function openDrawer(title) { document.getElementById('drawer-title').innerText = title; document.getElementById('drawer').classList.remove('opacity-0', 'pointer-events-none'); document.getElementById('drawer-content').classList.remove('translate-x-full'); }
-
-        function openNodeDetails(nodeId) {
-            activeDrawerNodeId = nodeId;
-            openDrawer(`节点报告: ${nodeId}`);
-            renderNodeDetailsContent(nodes.find(n => n.id === nodeId));
-        }
-
-        function renderNodeDetailsContent(node) {
-            const body = document.getElementById('drawer-body');
-            body.innerHTML = `
-                <div class="p-6 bg-slate-900 text-white rounded-2xl mb-6 shadow-xl">
-                    <div class="text-[10px] opacity-40 uppercase mb-1">Mesh Node ID</div>
-                    <div class="text-2xl font-black mono text-indigo-400 tracking-tighter">${node.id}</div>
+        // --- Rendering ---
+        function renderNodeLogs(node) {
+            return node.logs.map(l => `
+                <div class="log-entry p-3 border border-slate-100 rounded-lg mono text-[8px] flex flex-col gap-1.5 animate-in fade-in slide-in-from-left-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-indigo-600 font-bold uppercase">${l.type}</span>
+                        <span class="text-slate-300 shrink-0">${l.time}</span>
+                    </div>
+                    <div class="text-[7px] text-slate-400 truncate opacity-50">ID: ${l.id}</div>
+                    <div class="text-[9px] text-slate-700 break-all bg-slate-50 p-2 rounded-md border border-slate-200 whitespace-pre-wrap leading-tight shadow-inner">${l.data}</div>
                 </div>
-                <div>
-                    <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">原子所有权流转日志 (TRANSFER ONLY)</h3>
-                    <div class="space-y-4">
-                        ${node.messageHistory.length === 0 ? '<div class="text-slate-300 text-[10px] text-center py-10">暂未接收到转移指令广播</div>' : ''}
-                        ${node.messageHistory.map(h => `
-                            <div class="p-4 border border-slate-100 bg-white rounded-xl mono text-[10px] shadow-sm">
-                                <div class="flex justify-between mb-3">
-                                    <span class="text-indigo-600 font-black px-2 py-0.5 bg-indigo-50 rounded">${h.type}</span>
-                                    <span class="text-slate-400">${h.time}</span>
-                                </div>
-                                <div class="space-y-2.5">
-                                    <div class="flex flex-col">
-                                        <span class="opacity-40 text-[8px] uppercase font-bold">Signer (Previous Owner)</span>
-                                        <span class="font-bold text-slate-900 break-all leading-tight mt-0.5">${h.sender}</span>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="opacity-40 text-[8px] uppercase font-bold">Beneficiary (New Owner)</span>
-                                        <span class="font-bold text-slate-900 break-all leading-tight mt-0.5">${h.receiver}</span>
-                                    </div>
-                                    <div class="text-[8px] text-slate-400 pt-2 border-t border-slate-50 mt-1 flex justify-between">
-                                        <span>SOURCE: ${h.fromNode}</span>
-                                        <span class="clickable-link text-indigo-500 font-bold" onclick="openAssetDetails('${h.chainHash}')">TRACE S-${h.serial}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
+            `).join('') || '<div class="text-xs text-slate-300 italic py-4 text-center">暂无记录</div>';
+        }
+
+        function renderNodes() {
+            const grid = document.getElementById('node-grid');
+            grid.innerHTML = '';
+            state.nodes.forEach(n => {
+                const el = document.createElement('div');
+                el.id = `node-${n.id}`;
+                el.className = 'card flex flex-col items-center justify-center p-6 space-y-2';
+                el.setAttribute('onclick', `openNodeOverlay('${n.id}')`);
+                el.innerHTML = `
+                    <div class="text-[10px] font-black mono text-indigo-500 truncate w-full text-center select-none">${n.id.substring(0,8)}</div>
+                    <div class="text-[9px] text-slate-400 uppercase font-bold flex items-center gap-1"><i data-lucide="link-2" size="10"></i> ${n.neighbors.length} PEERS</div>
+                `;
+                grid.appendChild(el);
+            });
+            lucide.createIcons();
+        }
+
+        function renderUsers() {
+            const grid = document.getElementById('user-grid');
+            grid.innerHTML = '';
+            state.users.forEach(u => {
+                const el = document.createElement('div');
+                el.className = 'card flex flex-col p-4 space-y-3';
+                el.setAttribute('onclick', `openUserOverlay('${u.pub}')`);
+                el.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><i data-lucide="user" size="14"></i></div>
+                        <div id="user-bal-${u.pub}" class="text-xs font-black text-indigo-600">$0</div>
+                    </div>
+                    <div>
+                        <div class="text-[8px] text-slate-400 uppercase font-bold tracking-widest mb-1">公钥</div>
+                        <div class="mono text-[10px] text-slate-900 truncate" title="${u.pub}">${u.pub.substring(0, 8)}...</div>
+                    </div>
+                `;
+                grid.appendChild(el);
+            });
+            lucide.createIcons();
+        }
+
+        function renderChains() {
+            const grid = document.getElementById('chain-grid');
+            grid.innerHTML = '';
+            state.chains.forEach(c => {
+                const el = document.createElement('div');
+                el.id = `chain-card-${c.genesisId}`;
+                el.className = 'card flex flex-col items-center justify-center py-5 space-y-1';
+                el.setAttribute('onclick', `openChainOverlay('${c.genesisId}')`);
+                const lastId = c.blocks[c.blocks.length - 1].id;
+                el.innerHTML = `
+                    <div class="text-sm font-black text-emerald-600">$${c.denomination}</div>
+                    <div class="mono text-[8px] text-slate-400 font-bold" title="${lastId}">#${c.serial} · ${lastId.substring(0,8)}</div>
+                `;
+                grid.appendChild(el);
+            });
+            lucide.createIcons();
+        }
+
+        function updateAllBalances() {
+            state.users.forEach(u => {
+                const bal = state.chains.filter(c => c.currentOwner === u.pub).reduce((s, c) => s + c.denomination, 0);
+                const el = document.getElementById(`user-bal-${u.pub}`);
+                if (el) el.innerText = `$${bal}`;
+            });
+        }
+
+        // --- Navigation ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(b => {
+                b.classList.remove('border-indigo-600', 'text-indigo-600');
+                b.classList.add('border-transparent', 'text-slate-400');
+            });
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            const btn = document.getElementById(`tab-btn-${tabId}`);
+            btn.classList.remove('border-transparent', 'text-slate-400');
+            btn.classList.add('border-indigo-600', 'text-indigo-600');
+        }
+
+        function closeOverlay() {
+            activeOverlayId = null;
+            document.getElementById('overlay').classList.add('opacity-0', 'pointer-events-none');
+            document.getElementById('overlay-content').classList.add('translate-x-full');
+        }
+
+        function openOverlay(title) {
+            document.getElementById('overlay-title').innerText = title;
+            document.getElementById('overlay').classList.remove('opacity-0', 'pointer-events-none');
+            document.getElementById('overlay-content').classList.remove('translate-x-full');
+        }
+
+        function openNodeOverlay(id) {
+            activeOverlayId = id;
+            const node = state.nodes.find(n => n.id === id);
+            openOverlay(`节点控制台: ${node.id.substring(0,8)}`);
+            const body = document.getElementById('overlay-body');
+            const nodeUsers = state.users.filter(u => u.nodes.includes(id));
+            body.innerHTML = `
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-slate-50 rounded-xl">
+                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">邻居连接</div>
+                        <div class="mono text-[9px] break-all text-slate-600">${node.neighbors.map(n=>n.substring(0,6)).join(', ')}</div>
+                    </div>
+                    <div class="p-4 bg-slate-50 rounded-xl">
+                        <div class="text-[10px] text-slate-400 font-bold mb-1 uppercase">本地用户数</div>
+                        <div class="mono text-[10px] font-bold text-slate-600">${nodeUsers.length}</div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <h3 class="text-xs font-black uppercase text-slate-400 flex items-center justify-between px-1">广播流水 (全量显示) <span>${node.logs.length} 条</span></h3>
+                    <div id="node-logs-container" class="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                        ${renderNodeLogs(node)}
+                    </div>
+                </div>
+                <div class="p-6 bg-slate-900 rounded-2xl space-y-4 shadow-xl">
+                    <h3 class="text-xs font-black text-indigo-400 uppercase tracking-wider">Mesh 网络广播测试</h3>
+                    <textarea id="test-msg" class="w-full bg-slate-800 border-none rounded-xl p-4 text-xs text-white mono outline-none h-24 placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 transition-all" placeholder="在此输入需要广播的完整数据内容..."></textarea>
+                    <button onclick="broadcastTest('${node.id}')" class="w-full py-4 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/40">发起全网异步广播</button>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function broadcastTest(nodeId) {
+            const val = document.getElementById('test-msg').value;
+            if (!val) return;
+            const block = { 
+                id: 'TEST-' + Math.random().toString(36).substr(2, 12).toUpperCase(), 
+                type: 'TEST_DATA', 
+                data: val, 
+                timestamp: Date.now() 
+            };
+            startBroadcast(block, nodeId);
+            document.getElementById('test-msg').value = '';
+        }
+
+        function openUserOverlay(pub) {
+            const user = state.users.find(u => u.pub === pub);
+            const userChains = state.chains.filter(c => c.currentOwner === pub);
+            openOverlay(`用户详情`);
+            const body = document.getElementById('overlay-body');
+            body.innerHTML = `
+                <div class="p-8 bg-indigo-600 rounded-3xl text-white space-y-4 shadow-xl shadow-indigo-200">
+                    <div>
+                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">账户总额</div>
+                        <div class="text-5xl font-black">$${userChains.reduce((s, c) => s + c.denomination, 0)}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] opacity-60 font-bold uppercase tracking-widest">Base64 公钥 ID</div>
+                        <div class="mono text-[9px] break-all bg-white/10 p-4 rounded-xl mt-2 select-all leading-relaxed">${user.pub}</div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <h3 class="text-xs font-black uppercase text-slate-400">Mesh 接入节点</h3>
+                    <div class="flex flex-wrap gap-2">
+                        ${user.nodes.map(n => `<span class="px-3 py-1.5 bg-slate-100 rounded-lg mono text-[9px] font-bold text-slate-600">${n.substring(0,12)}...</span>`).join('')}
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <h3 class="text-xs font-black uppercase text-slate-400">持有的原子区块链 (${userChains.length})</h3>
+                    <div class="grid grid-cols-4 gap-2">
+                        ${userChains.map(c => `<div onclick="openChainOverlay('${c.genesisId}')" class="p-2 border border-slate-100 rounded-lg text-center bg-white hover:border-indigo-500 transition-colors"><div class="text-xs font-bold text-indigo-600">$${c.denomination}</div><div class="text-[8px] text-slate-400 mono">#${c.serial}</div></div>`).join('')}
                     </div>
                 </div>
             `;
             lucide.createIcons();
         }
 
-        function openUserDetails(pubKey) {
-            const isIssuer = (foundingIssuer && pubKey === foundingIssuer.pub);
-            openDrawer(isIssuer ? "创始发行人控制台" : "所有权看板");
-            const userAssets = chains.filter(c => c.currentOwner === pubKey);
-            document.getElementById('drawer-body').innerHTML = `
-                <div class="p-6 ${isIssuer ? 'bg-slate-900' : 'bg-indigo-600'} text-white rounded-2xl mb-8 shadow-xl">
-                    <div class="text-[10px] opacity-60 uppercase mb-1 font-bold">${isIssuer ? 'Original Assets' : 'Account Balance'}</div>
-                    <div class="text-5xl font-black mb-6">$${userAssets.length * 10}</div>
-                    <div class="mono text-[8px] break-all ${isIssuer ? 'bg-slate-800' : 'bg-indigo-700/50'} p-3 rounded-xl leading-relaxed">${pubKey}</div>
-                </div>
-                <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">持有原子链 (${userAssets.length})</h3>
-                <div class="grid grid-cols-4 gap-2">
-                    ${userAssets.map(c => `<div onclick="openAssetDetails('${c.genesisHash}')" class="p-2 border border-slate-200 rounded-lg text-center bg-white cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all"><div class="text-[10px] font-bold text-indigo-600">$10</div><div class="text-[7px] text-slate-400 mono">#${c.serial}</div></div>`).join('')}
-                </div>
-            `;
-            lucide.createIcons();
-        }
+        function openChainOverlay(genesisId) {
+            const chain = state.chains.find(c => c.genesisId === genesisId);
+            openOverlay(`区块链详情 #${chain.serial}`);
+            const body = document.getElementById('overlay-body');
+            const others = state.users.filter(u => u.pub !== chain.currentOwner);
+            const randomTarget = others[Math.floor(Math.random() * others.length)].pub;
 
-        function openAssetDetails(genesisHash) {
-            const chain = chains.find(c => c.genesisHash === genesisHash);
-            openDrawer(`资产溯源 #${chain.serial}`);
-            document.getElementById('drawer-body').innerHTML = `
-                <div class="p-6 bg-slate-900 text-white rounded-2xl mb-8 shadow-xl">
-                    <div class="text-[10px] opacity-40 uppercase mb-1">Current Owner Public Key</div>
-                    <div class="mono text-[9px] break-all mb-4 text-indigo-400 font-bold leading-relaxed clickable-link" onclick="openUserDetails('${chain.currentOwner}')">${chain.currentOwner}</div>
-                    <div class="text-[10px] opacity-40 uppercase mb-1">Chain Genesis Hash</div>
-                    <div class="mono text-[9px] opacity-60 break-all leading-relaxed">${chain.genesisHash}</div>
+            body.innerHTML = `
+                <div class="p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-full uppercase tracking-tighter">面值 $${chain.denomination}</div>
+                        <div class="text-[10px] text-slate-400 font-bold mono">CHAIN-ROOT: ${chain.genesisId.substring(0, 10)}...</div>
+                    </div>
+                    <div class="text-[10px] text-slate-400 uppercase font-bold mb-1">当前物权所有者 (PubKey)</div>
+                    <div class="mono text-[9px] break-all p-3 bg-white rounded-xl border border-emerald-200 select-all leading-relaxed">${chain.currentOwner}</div>
                 </div>
-                <div class="mb-8">
-                    <h3 class="font-bold text-slate-400 uppercase text-[10px] mb-4 tracking-widest">完整流转历史 (全区块回溯)</h3>
-                    <div class="space-y-3">
+
+                <div class="space-y-4">
+                    <h3 class="text-xs font-black uppercase text-slate-400 px-1">原子账本区块历史</h3>
+                    <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                         ${chain.blocks.map((b, i) => `
-                            <div class="p-4 bg-white border border-slate-100 rounded-xl mono text-[9px] shadow-sm">
-                                <div class="flex justify-between font-bold mb-2">
-                                    <span class="text-indigo-600">${i===0?'GENESIS BLOCK':'TRANSFER BLOCK'}</span>
-                                    <span class="text-slate-300 font-medium">${new Date(b.timestamp).toLocaleTimeString()}</span>
+                            <div class="p-4 bg-white border border-slate-100 rounded-xl space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] font-black uppercase ${i===0?'text-indigo-600':'text-emerald-600'}">${b.type}</span>
+                                    <span class="text-[9px] text-slate-300 mono">${new Date(b.timestamp).toLocaleTimeString()}</span>
                                 </div>
-                                <div class="truncate opacity-50 mb-1">DATA: ${b.data}</div>
-                                <div class="truncate text-slate-400">HASH: ${b.hash}</div>
+                                <div class="mono text-[8px] text-slate-400 break-all bg-slate-50 p-2 rounded leading-tight">ID: ${b.id}</div>
                             </div>
                         `).reverse().join('')}
                     </div>
                 </div>
-                <div class="p-6 bg-white border-2 border-slate-900 rounded-2xl shadow-xl">
-                    <h3 class="font-black text-sm mb-4 uppercase tracking-tighter">签署并发布转移指令</h3>
-                    <div class="text-[10px] text-slate-400 mb-2 uppercase font-bold">New Beneficiary Public Key</div>
-                    <select id="t-sel" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-[10px] mb-4 font-mono outline-none focus:ring-2 focus:ring-indigo-500">
-                        ${identities.filter(id => id.pub !== chain.currentOwner).map(id => `<option value="${id.pub}">${id.pub.substring(0,32)}...</option>`).join('')}
-                    </select>
-                    <button onclick="transferAsset('${chain.genesisHash}', document.getElementById('t-sel').value)" class="w-full p-4 bg-slate-900 text-white font-black rounded-xl text-sm shadow-lg hover:bg-black transition-all active:scale-[0.98]">
-                        SIGN & BROADCAST
+
+                <div class="p-6 bg-slate-900 rounded-2xl space-y-4">
+                    <h3 class="text-xs font-black text-indigo-400 uppercase">执行原子支付</h3>
+                    <div>
+                        <div class="text-[10px] text-slate-500 font-bold mb-2 uppercase">目标收款人 ID</div>
+                        <select id="pay-target" class="w-full bg-slate-800 border-none rounded-xl p-4 text-[9px] text-white mono outline-none">
+                            ${others.map(u => `<option value="${u.pub}" ${u.pub === randomTarget ? 'selected' : ''}>${u.pub.substring(0, 48)}...</option>`).join('')}
+                        </select>
+                    </div>
+                    <button onclick="payBanknote('${chain.genesisId}')" class="w-full py-4 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-900/50">
+                        签署并广播物权指令
                     </button>
-                    <p class="text-[8px] text-slate-400 mt-3 text-center uppercase tracking-tight">转移指令将由当前所有者公钥签署</p>
                 </div>
             `;
             lucide.createIcons();
         }
+
+        async function payBanknote(genesisId) {
+            const chain = state.chains.find(c => c.genesisId === genesisId);
+            const targetPub = document.getElementById('pay-target').value;
+            const currentUser = state.users.find(u => u.pub === chain.currentOwner);
+            if (!currentUser) return alert("本地账户环境缺失。");
+
+            appendStatus("执行 Web Crypto 数字签名...");
+            const privKey = await importPrivateKey(currentUser.priv);
+            const prev = chain.blocks[chain.blocks.length - 1];
+            const ts = Date.now();
+            const data = `${prev.id}\n支付区块\n${ts}\n${targetPub}`;
+            const sig = await signData(data, privKey);
+
+            const block = { id: sig, type: '支付区块', data: data, prevId: prev.id, target: targetPub, timestamp: ts, signature: sig };
+
+            // 立即发起广播
+            startBroadcast(block, currentUser.nodes[0]);
+            
+            appendStatus("支付区块已签署并进入 P2P 网络。");
+            closeOverlay();
+            saveState();
+        }
+
+        window.onload = loadState;
         lucide.createIcons();
     </script>
 </body>
