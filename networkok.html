@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic MESH - AOB 实验室 (网络备份版)</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow: hidden; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .node-pulse { animation: pulse-bg 0.4s ease-out; }
+        @keyframes pulse-bg { 0% { background-color: rgba(79, 70, 229, 0.4); border-color: #4f46e5; } 100% { background-color: white; border-color: #e2e8f0; } }
+        
+        * { cursor: default; }
+        [onclick], button, .card, .tab-btn, select, a { cursor: pointer !important; }
+        
+        .btn-active { @apply bg-indigo-600 text-white shadow-md hover:bg-indigo-700 active:scale-95 transition-all; }
+        .btn-inactive { @apply bg-slate-100 text-slate-400 cursor-not-allowed; }
+        .card { @apply bg-white border border-slate-200 rounded-xl p-4 transition-all hover:shadow-md hover:border-indigo-300; }
+        .blacklist-active { @apply border-red-500 bg-red-50/30; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 p-6 z-30">
+        <div class="max-w-7xl mx-auto flex justify-between items-start">
+            <div id="intro-text" class="space-y-1">
+                <p class="text-sm font-semibold text-indigo-600 uppercase tracking-wider">AOB Protocol Simulator</p>
+                <h1 class="text-2xl font-extrabold text-slate-900">Atomic Ownership Blockchains 仿真实验室</h1>
+                <div id="status-history" class="text-xs text-slate-500 font-medium leading-relaxed">
+                    本项目演示 AOB 原子所有权协议。请点击“建立网络”开始。
+                </div>
+            </div>
+            <div id="mqtt-status" class="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] font-bold rounded-full uppercase">Broker: Connecting...</div>
+        </div>
+        
+        <div class="max-w-7xl mx-auto mt-6">
+            <div id="controls" class="flex flex-wrap gap-3">
+                <button id="btn-init-net" onclick="initNetwork()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="network" size="16"></i> 建立网络</button>
+                <button id="btn-init-users" onclick="initUsers()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="users" size="16"></i> 创建用户账户</button>
+                <button id="btn-init-assets" onclick="initBanknotes()" class="px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all btn-inactive" disabled><i data-lucide="banknote" size="16"></i> 创建区块链钞票</button>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-white border-b border-slate-100 px-6">
+        <div class="max-w-7xl mx-auto flex gap-8">
+            <button onclick="switchTab('nodes')" id="tab-btn-nodes" class="tab-btn py-4 text-sm font-bold border-b-2 border-indigo-600 text-indigo-600 flex items-center gap-2"><i data-lucide="server" size="14"></i> 节点</button>
+            <button onclick="switchTab('users')" id="tab-btn-users" class="tab-btn py-4 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="user-square" size="14"></i> 用户</button>
+            <button onclick="switchTab('chains')" id="tab-btn-chains" class="tab-btn py-4 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="box" size="14"></i> 区块链</button>
+        </div>
+    </nav>
+
+    <main class="flex-1 overflow-hidden relative bg-slate-50/50">
+        <div id="tab-nodes" class="tab-content active h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="node-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+        <div id="tab-users" class="tab-content h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="user-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+        <div id="tab-chains" class="tab-content h-full p-8 overflow-y-auto custom-scrollbar">
+            <div id="chain-grid" class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 xl:grid-cols-10 gap-4 max-w-7xl mx-auto"></div>
+        </div>
+    </main>
+
+    <div id="overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-end transition-opacity opacity-0 pointer-events-none">
+        <div id="overlay-content" class="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col p-10 transform translate-x-full transition-transform duration-300">
+            <div class="flex justify-between items-center mb-8">
+                <h2 id="overlay-title" class="text-xl font-extrabold text-slate-900 uppercase tracking-tight">详情</h2>
+                <button onclick="closeOverlay()" class="p-2 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div id="overlay-body" class="flex-1 overflow-y-auto custom-scrollbar space-y-6"></div>
+        </div>
+    </div>
+
+    <script>
+        var mqttClient;
+        var superUser = null;
+        var activeOverlayId = null;
+        var appInstanceId = Math.random().toString(36).substr(2, 4).toUpperCase();
+
+        const CONFIG = {
+            NODE_COUNT: 30,
+            USER_COUNT: 30,
+            BANKNOTE_COUNT: 100,
+            MQTT_BROKER: 'wss://broker.hivemq.com:8884/mqtt', 
+            TOPIC_MESH: 'aob/v20/mesh',
+            TOPIC_DISCOVERY: 'aob/v20/nodes',
+            DEFINITION_DOC: `AOB Banknote Protocol Genesis definition...`
+        };
+
+        let state = { nodes: [], users: [], chains: [], step: 0 };
+        
+        mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { 
+            clientId: 'aob_backup_' + appInstanceId,
+            connectTimeout: 45000,
+            keepalive: 30,
+            clean: true,
+            path: '/mqtt'
+        });
+
+        mqttClient.on('connect', () => {
+            const el = document.getElementById('mqtt-status');
+            if (el) {
+                el.innerText = "Broker: Online";
+                el.className = "px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold rounded-full uppercase";
+            }
+            mqttClient.subscribe(CONFIG.TOPIC_MESH);
+            mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY);
+            updateStepUI();
+        });
+
+        mqttClient.on('message', (topic, payload) => {
+            try {
+                const data = JSON.parse(payload.toString());
+                if (topic === CONFIG.TOPIC_DISCOVERY) handleDiscovery(data);
+                else if (topic === CONFIG.TOPIC_MESH) handleMesh(data);
+            } catch (e) { console.error("MQTT Message Error", e); }
+        });
+
+        function handleDiscovery(data) {
+            const senderId = data.id;
+            if (data.instance === appInstanceId) return;
+
+            state.nodes.forEach(node => {
+                if (node.neighbors.length < 5 && !node.neighbors.includes(senderId)) {
+                    node.neighbors.push(senderId);
+                    renderNodes();
+                    if (activeOverlayId === node.id) openNodeOverlay(node.id);
+                }
+            });
+        }
+
+        async function handleMesh(data) {
+            for (const node of state.nodes) {
+                if (data.block) {
+                    await processBlock(node, data.block);
+                } else if (data.alert) {
+                    handleAlert(node, data.alert);
+                } else if (data.msg) {
+                    processMsg(node, data.msg, data.from);
+                }
+            }
+        }
+
+        function handleAlert(node, alert) {
+            if (alert.type === 'FORK_ALERT') {
+                if (!node.blacklist.has(alert.offender)) {
+                    node.blacklist.add(alert.offender);
+                    node.logs.unshift({ type: 'SECURITY_ALERT', time: new Date().toLocaleTimeString(), data: `FORK DETECTED! Author Blacklisted: ${alert.offender.substring(0,12)}...` });
+                    renderNodes();
+                }
+            }
+        }
+
+        function processMsg(node, msg, from) {
+            const mId = msg + from;
+            if (!node.seenMsgs) node.seenMsgs = new Set();
+            if (node.seenMsgs.has(mId)) return;
+            node.seenMsgs.add(mId);
+            node.logs.unshift({ type: 'MSG', time: new Date().toLocaleTimeString(), data: `[${from}] ${msg}` });
+            if (node.logs.length > 32) node.logs.pop();
+            triggerPulse(node.id);
+        }
+
+        async function processBlock(node, block) {
+            if (!block || !block.id || !block.author) return;
+            if (node.blacklist.has(block.author)) return; 
+
+            if (block.type === 'PAYMENT') {
+                const isSigValid = await verifySignature(block.data, block.signature, block.author);
+                if (!isSigValid) return;
+            }
+
+            if (node.seenIds.has(block.id)) return;
+            node.seenIds.add(block.id);
+
+            if (!node.ledger[block.chainRootId]) node.ledger[block.chainRootId] = { blocks: [] };
+            const localChain = node.ledger[block.chainRootId];
+            
+            const existingFork = localChain.blocks.find(b => b.prevId === block.prevId && b.id !== block.id);
+            if (existingFork) {
+                node.blacklist.add(block.author);
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({
+                    from: node.id,
+                    alert: { type: 'FORK_ALERT', offender: block.author }
+                }));
+                renderNodes();
+                return;
+            }
+
+            localChain.blocks.push(block);
+            node.logs.unshift({ type: block.type, time: new Date().toLocaleTimeString(), data: block.data });
+            triggerPulse(node.id);
+            updateGlobalView(block);
+        }
+
+        function updateGlobalView(block) {
+            if (block.type === 'GENESIS') {
+                if (!state.chains.find(c => c.genesisId === block.id)) {
+                    const parts = block.data.split('\n');
+                    const serial = parseInt(parts[1]);
+                    let den = 1;
+                    if (serial > 80) den = 50; else if (serial > 60) den = 20; else if (serial > 40) den = 10; else if (serial > 20) den = 5;
+                    state.chains.push({ serial, denomination: den, genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM' });
+                    renderChains();
+                }
+            } else if (block.type === 'PAYMENT') {
+                const chain = state.chains.find(c => c.genesisId === block.chainRootId);
+                if (chain && !chain.blocks.find(b => b.id === block.id)) {
+                    chain.blocks.push(block);
+                    chain.currentOwner = block.target;
+                    renderChains();
+                    renderUsers();
+                    saveState();
+                }
+            }
+        }
+
+        function triggerPulse(nodeId) {
+            const el = document.getElementById(`node-${nodeId}`);
+            if (el) { el.classList.remove('node-pulse'); void el.offsetWidth; el.classList.add('node-pulse'); }
+        }
+
+        async function getHash(text) {
+            const msgUint8 = new TextEncoder().encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
+        }
+        async function generateKeyPair() {
+            const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+            const pubExport = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+            const privExport = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+            return { pub: btoa(String.fromCharCode(...new Uint8Array(pubExport))), priv: btoa(String.fromCharCode(...new Uint8Array(privExport))), keyPair };
+        }
+        async function importPrivateKey(b64) {
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return await crypto.subtle.importKey("pkcs8", bytes.buffer, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+        }
+        async function signData(data, privateKey) {
+            const signature = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, privateKey, new TextEncoder().encode(data));
+            return btoa(String.fromCharCode(...new Uint8Array(signature)));
+        }
+        async function verifySignature(data, signature, publicKeyB64) {
+            try {
+                const binaryPub = atob(publicKeyB64);
+                const bytesPub = new Uint8Array(binaryPub.length);
+                for (let i = 0; i < binaryPub.length; i++) bytesPub[i] = binaryPub.charCodeAt(i);
+                const publicKey = await crypto.subtle.importKey("spki", bytesPub.buffer, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
+                const sigBinary = atob(signature);
+                const sigBytes = new Uint8Array(sigBinary.length);
+                for (let i = 0; i < sigBinary.length; i++) sigBytes[i] = sigBinary.charCodeAt(i);
+                return await crypto.subtle.verify({ name: "ECDSA", hash: { name: "SHA-256" } }, publicKey, sigBytes, new TextEncoder().encode(data));
+            } catch (e) { return false; }
+        }
+
+        function initNetwork() {
+            if (state.step > 0) return;
+            state.nodes = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
+                id: `N-${appInstanceId}-${i+1}`,
+                neighbors: [],
+                logs: [],
+                seenIds: new Set(),
+                seenMsgs: new Set(),
+                ledger: {},
+                blacklist: new Set()
+            }));
+            startNodeBeats();
+            state.step = 1;
+            appendStatus("网络就绪。");
+            saveState();
+            refreshUIFromState();
+            switchTab('nodes');
+        }
+
+        function startNodeBeats() {
+            state.nodes.forEach(node => {
+                const beat = () => {
+                    if (mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ id: node.id, type: 'ONLINE', instance: appInstanceId }));
+                };
+                setInterval(beat, 15000 + Math.random() * 5000);
+                beat();
+            });
+        }
+
+        async function initUsers() {
+            if (state.step !== 1) return;
+            superUser = await generateKeyPair();
+            state.users = [];
+            for (let i = 0; i < CONFIG.USER_COUNT; i++) {
+                const u = await generateKeyPair();
+                u.nodes = state.nodes.sort(() => 0.5 - Math.random()).slice(0, 3).map(n => n.id);
+                state.users.push(u);
+            }
+            state.step = 2;
+            appendStatus("用户就绪。");
+            saveState();
+            refreshUIFromState();
+            switchTab('users');
+        }
+
+        async function initBanknotes() {
+            if (state.step !== 2) return;
+            const h = await getHash(CONFIG.DEFINITION_DOC);
+            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                let den = 1;
+                if (s > 80) den = 50; else if (s > 60) den = 20; else if (s > 40) den = 10; else if (s > 20) den = 5;
+                const gData = `${h}\n${s}\n${superUser.pub}`;
+                const gId = await getHash(gData);
+                const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId, timestamp: Date.now() };
+                const target = state.users[Math.floor(Math.random() * state.users.length)];
+                const ts = Date.now();
+                const pData = `${gId}\nPAYMENT\n${ts}\n${target.pub}`;
+                const sig = await signData(pData, superUser.keyPair.privateKey);
+                const pay = { id: sig, type: 'PAYMENT', data: pData, prevId: gId, author: superUser.pub, target: target.pub, chainRootId: gId, timestamp: ts, signature: sig };
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ from: 'GOD_NODE', block: genesis }));
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ from: 'GOD_NODE', block: pay }));
+            }
+            state.step = 3;
+            appendStatus("创建区块链钞票就绪。");
+            saveState();
+            refreshUIFromState();
+            switchTab('chains');
+        }
+
+        function renderNodes() {
+            const grid = document.getElementById('node-grid'); if (!grid) return;
+            grid.innerHTML = '';
+            state.nodes.forEach(n => {
+                const el = document.createElement('div');
+                const hasAlert = n.blacklist.size > 0;
+                el.id = `node-${n.id}`;
+                el.className = `card flex flex-col items-center justify-center p-6 space-y-2 ${hasAlert ? 'blacklist-active' : ''}`;
+                el.innerHTML = `
+                    <div class="text-[9px] font-black mono text-indigo-500 truncate w-full text-center">${n.id}</div>
+                    <div class="text-[10px] font-bold ${n.neighbors.length > 0 ? 'text-emerald-500' : 'text-slate-300'} uppercase">${n.neighbors.length} PEERS</div>
+                `;
+                grid.appendChild(el);
+            });
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function renderUsers() {
+            const grid = document.getElementById('user-grid'); if (!grid) return;
+            grid.innerHTML = '';
+            state.users.forEach(u => {
+                const bal = state.chains.filter(c => c.currentOwner === u.pub).reduce((s, c) => s + c.denomination, 0);
+                const el = document.createElement('div');
+                el.className = 'card flex flex-col p-4 space-y-3';
+                el.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><i data-lucide="user" size="14"></i></div>
+                        <div class="text-xs font-black text-indigo-600">$${bal}</div>
+                    </div>
+                    <div>
+                        <div class="mono text-[10px] text-slate-900 truncate">${u.pub.substring(0,8)}...</div>
+                    </div>
+                `;
+                grid.appendChild(el);
+            });
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function renderChains() {
+            const grid = document.getElementById('chain-grid'); if (!grid) return;
+            grid.innerHTML = '';
+            state.chains.forEach(c => {
+                const el = document.createElement('div');
+                el.className = 'card flex flex-col items-center justify-center py-5 space-y-1';
+                el.innerHTML = `<div class="text-sm font-black text-emerald-600">$${c.denomination}</div><div class="mono text-[9px] text-slate-400 font-bold">#${c.serial}</div>`;
+                grid.appendChild(el);
+            });
+        }
+
+        function switchTab(id) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById(`tab-${id}`).classList.add('active');
+        }
+
+        function saveState() { 
+            const serialized = { ...state, nodes: state.nodes.map(n => ({ 
+                ...n, 
+                seenIds: Array.from(n.seenIds), 
+                seenMsgs: Array.from(n.seenMsgs), 
+                blacklist: Array.from(n.blacklist) 
+            })) };
+            localStorage.setItem('aob_v20_final', JSON.stringify(serialized)); 
+        }
+
+        function loadState() {
+            const s = localStorage.getItem('aob_v20_final');
+            if (s) {
+                try {
+                    state = JSON.parse(s);
+                    state.nodes.forEach(n => { 
+                        n.seenIds = new Set(n.seenIds || []); 
+                        n.seenMsgs = new Set(n.seenMsgs || []); 
+                        n.blacklist = new Set(n.blacklist || []);
+                        n.ledger = n.ledger || {};
+                    });
+                    if (state.step >= 1) startNodeBeats();
+                    refreshUIFromState();
+                } catch (e) { updateStepUI(); }
+            } else { updateStepUI(); }
+        }
+
+        function refreshUIFromState() { updateStepUI(); renderNodes(); renderUsers(); renderChains(); if (window.lucide) lucide.createIcons(); }
+        function appendStatus(t) { 
+            const h = document.getElementById('status-history');
+            if (h) h.innerHTML += `<div>${t}</div>`; 
+        }
+        window.onload = loadState;
+    </script>
+</body>
+</html>
