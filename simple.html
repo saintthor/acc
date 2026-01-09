@@ -1,0 +1,42 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>MQTT P2P Simple</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>body{font-family:sans-serif;padding:20px;background:#f0f2f5;}#log{border:1px solid #ccc;padding:10px;height:300px;overflow:auto;background:white;margin-top:10px;font-family:monospace;}</style>
+</head><body>
+    <h3>MQTT P2P Discovery (AOB Base)</h3>
+    <div id="status" style="color:red">Connecting to MQTT Broker...</div>
+    <div id="myid" style="font-weight:bold;margin:10px 0;"></div>
+    <button onclick="send()" style="padding:10px 20px;cursor:pointer;">Broadcast Message</button>
+    <div id="log"></div>
+    <script>
+        const id = 'Node-' + Math.random().toString(36).substr(2, 5);
+        document.getElementById('myid').innerText = "My ID: " + id;
+        const topic = 'aob/v16/simple_demo';
+        // 使用 Mosquitto 公共测试服务器的 WebSocket 端口
+        const client = mqtt.connect('ws://test.mosquitto.org:8080');
+
+        client.on('connect', () => {
+            document.getElementById('status').innerText = "Connected to Mosquitto Broker!";
+            document.getElementById('status').style.color = "green";
+            client.subscribe(topic);
+            client.publish(topic, JSON.stringify({from: id, text: "I am online!"}));
+        });
+
+        client.on('error', (err) => {
+            document.getElementById('status').innerText = "Connection Error: " + err.message;
+            document.getElementById('status').style.color = "red";
+        });
+
+        client.on('message', (t, m) => {
+            const data = JSON.parse(m.toString());
+            if (data.from === id) return;
+            const log = document.getElementById('log');
+            log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] <b>${data.from}:</b> ${data.text}</div>`;
+            log.scrollTop = log.scrollHeight;
+        });
+
+        function send() {
+            const msg = { from: id, text: "Hello from " + id + " at " + new Date().toLocaleTimeString() };
+            client.publish(topic, JSON.stringify(msg));
+        }
+    </script>
+</body></html>
