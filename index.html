@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atomic MESH - AOB 协议实验室</title>
+    <title>Atomic Ownership Lab - AOB 仿真实验室</title>
     <script type="importmap">
     {
       "imports": {
@@ -15,188 +15,129 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
+    <style type="text/tailwindcss">
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow-x: hidden; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow: hidden; height: 100vh; }
         .mono { font-family: 'JetBrains Mono', monospace; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         
-        main { min-height: 450px; flex: 1; display: flex; flex-direction: column; }
-        .tab-content { display: none; flex: 1; width: 100%; }
+        .tab-content { display: none; height: calc(100vh - 280px); }
         .tab-content.active { display: flex; flex-direction: column; }
         
-        .btn-box {
-            @apply px-6 py-3 rounded-xl text-sm font-extrabold flex items-center gap-2 transition-all uppercase tracking-wider border-2 border-transparent;
+        .fixed-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
         }
+        .fixed-overlay.open { opacity: 100; pointer-events: auto; }
+
+        #details-overlay { z-index: 100; justify-content: flex-end; }
+        #details-content {
+            width: 100%; max-width: 550px; height: 100%;
+            background: white;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex; flex-direction: column;
+        }
+        #details-overlay.open #details-content { transform: translateX(0); }
+
+        .btn-box { @apply px-6 py-3 rounded-xl text-sm font-extrabold flex items-center gap-2 transition-all uppercase tracking-wider border-2 border-transparent; }
         .btn-active { @apply bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-95 cursor-pointer; }
         .btn-inactive { @apply bg-slate-100 text-slate-400 cursor-not-allowed opacity-50; }
-
-        .guide-pulse { animation: pulse-ring 2s infinite; }
-        @keyframes pulse-ring {
-            0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.7); transform: scale(1); }
-            70% { box-shadow: 0 0 0 20px rgba(79, 70, 229, 0); transform: scale(1.05); }
-            100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); transform: scale(1); }
-        }
-
-        .card { @apply bg-white border border-slate-200 rounded-2xl p-4 transition-all hover:shadow-xl hover:border-indigo-400 active:scale-[0.98] w-40 flex-shrink-0 cursor-pointer; }
-        .card.active-selection { @apply border-indigo-600 ring-4 ring-indigo-600/10 bg-indigo-50/20; }
         
-        .ai-btn { @apply p-1.5 text-indigo-400 hover:text-indigo-600 transition-colors inline-flex items-center rounded-full hover:bg-indigo-50; cursor: pointer !important; }
+        .tab-btn { @apply py-4 text-sm font-bold border-b-4 border-transparent text-slate-400 transition-all hover:text-slate-600; }
+        .tab-btn.active { @apply border-indigo-600 text-indigo-600 !important; }
 
-        #overlay { pointer-events: none; background: transparent; }
-        #overlay-content { pointer-events: auto; box-shadow: -20px 0 60px -15px rgba(0,0,0,0.1); border-left: 1px solid #f1f5f9; }
+        .card { @apply bg-white border-2 border-slate-200 rounded-2xl p-4 transition-all hover:shadow-lg active:scale-[0.98] w-48 flex-shrink-0 cursor-pointer relative; }
+        
+        /* 区块链三种状态区分 - 本地：蓝，远端：黄，抵押：灰 */
+        .chain-local { @apply border-blue-500 bg-blue-50/50 shadow-md ring-4 ring-blue-100; }
+        .chain-local .chain-val { @apply text-blue-700; }
+        
+        .chain-remote { @apply border-amber-500 bg-amber-50 shadow-md ring-4 ring-amber-100; }
+        .chain-remote .chain-val { @apply text-amber-700; }
+        
+        .chain-mortgaged { @apply border-slate-400 border-dashed bg-slate-100 opacity-60 grayscale; }
+        .chain-mortgaged .chain-val { @apply text-slate-500; }
 
-        #network-svg { width: 100%; height: 100%; background: #fff; cursor: crosshair; }
-        .node { stroke: #fff; stroke-width: 3px; cursor: pointer !important; transition: r 0.2s; }
-        .node:hover { r: 14; }
+        #network-svg { width: 100%; height: 100%; background: #fff; }
+        .node { stroke: #fff; stroke-width: 3px; cursor: pointer; }
         .link { stroke: #cbd5e1; stroke-opacity: 0.6; stroke-width: 1.5px; }
-
-        #ai-chat-window { 
-            @apply fixed bottom-8 right-8 w-96 h-[500px] bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 flex flex-col z-[100];
-            transform: translateY(160%);
-            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        #ai-chat-window.open { transform: translateY(0); }
-        
-        select option { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
 
-    <header class="bg-white border-b border-slate-200 p-10 z-30">
+    <header class="bg-white border-b border-slate-200 p-8 z-30 flex-shrink-0">
         <div class="max-w-7xl mx-auto flex justify-between items-start">
-            <div class="space-y-3">
-                <div class="flex items-center gap-2">
-                    <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">AOB Protocol Research Lab</p>
-                    <button onclick="window.askAI('什么是 Atomic Ownership Blockchains？')" class="ai-btn"><i data-lucide="help-circle" size="14"></i></button>
-                </div>
-                <h1 class="text-4xl font-black text-slate-900 tracking-tighter">AOB 仿真实验室</h1>
-                <div id="status-history" class="text-sm text-slate-500 font-medium max-w-3xl leading-relaxed">
-                    本实验室运行真实的 AOB 原子所有权协议。点击第一个按钮开始。
-                </div>
+            <div class="space-y-2">
+                <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership Research Lab</p>
+                <h1 class="text-3xl font-black text-slate-900 tracking-tighter">AOB 仿真实验室</h1>
+                <div id="status-history" class="text-sm text-slate-500 font-medium leading-relaxed">原子所有权 P2P 仿真环境。请点击“建立网络”以启动。</div>
             </div>
-            <div id="mqtt-status" class="px-5 py-2 bg-amber-50 text-amber-600 text-xs font-black rounded-full uppercase border border-amber-100 shadow-sm">Broker: Connecting...</div>
+            <div id="mqtt-status" class="px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100">Broker: Connecting...</div>
         </div>
         
-        <div class="max-w-7xl mx-auto mt-12">
-            <div id="controls" class="flex flex-wrap gap-6 items-center">
-                <div class="flex items-center gap-1">
-                    <button id="btn-init-net" onclick="window.initNetwork()" class="btn-box btn-active guide-pulse"><i data-lucide="network" size="20"></i> 建立网络</button>
-                    <button onclick="window.askAI('如何通过 MQTT 建立跨网页 P2P 网络？')" class="ai-btn"><i data-lucide="help-circle" size="14"></i></button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <button id="btn-init-accounts" onclick="window.initAccounts()" class="btn-box btn-inactive" disabled><i data-lucide="users" size="20"></i> 创建用户账户</button>
-                    <button onclick="window.askAI('AOB 的账户是如何保证私钥安全的？')" class="ai-btn"><i data-lucide="help-circle" size="14"></i></button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <button id="btn-init-assets" onclick="window.initBanknotes()" class="btn-box btn-inactive" disabled><i data-lucide="banknote" size="20"></i> 创建区块链钞票</button>
-                    <button onclick="window.askAI('钞票如何变成独立的区块链？')" class="ai-btn"><i data-lucide="help-circle" size="14"></i></button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <button id="btn-init-channels" onclick="window.initChannels()" class="btn-box btn-inactive" disabled><i data-lucide="zap" size="20"></i> 建立快速通道</button>
-                    <button onclick="window.askAI('Speedy Channel 的原子性如何保证？')" class="ai-btn"><i data-lucide="help-circle" size="14"></i></button>
-                </div>
-            </div>
+        <div class="max-w-7xl mx-auto mt-8 flex flex-wrap gap-4 items-center">
+            <button id="btn-init-net" onclick="window.initNetwork()" class="btn-box btn-active"><i data-lucide="network" size="18"></i> 建立网络</button>
+            <button id="btn-init-accounts" onclick="window.initAccounts()" class="btn-box btn-inactive" disabled><i data-lucide="users" size="18"></i> 创建用户账户</button>
+            <button id="btn-init-assets" onclick="window.initBanknotes()" class="btn-box btn-inactive" disabled><i data-lucide="banknote" size="18"></i> 创建区块链钞票</button>
+            <button id="btn-init-channels" onclick="window.initChannels()" class="btn-box btn-inactive" disabled><i data-lucide="zap" size="18"></i> 建立快速通道</button>
         </div>
     </header>
 
-    <nav class="bg-white border-b border-slate-100 px-10">
-        <div class="max-w-7xl mx-auto flex gap-12">
-            <button onclick="window.switchTab('nodes')" id="tab-btn-nodes" class="tab-btn py-6 text-sm font-black border-b-4 border-indigo-600 text-indigo-600 flex items-center gap-2"><i data-lucide="server" size="16"></i> 节点</button>
-            <button onclick="window.switchTab('accounts')" id="tab-btn-accounts" class="tab-btn py-6 text-sm font-black border-b-4 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="user-square" size="16"></i> 账户</button>
-            <button onclick="window.switchTab('chains')" id="tab-btn-chains" class="tab-btn py-6 text-sm font-black border-b-4 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="box" size="16"></i> 区块链</button>
-            <button onclick="window.switchTab('channels')" id="tab-btn-channels" class="tab-btn py-6 text-sm font-black border-b-4 border-transparent text-slate-400 hover:text-slate-600 flex items-center gap-2"><i data-lucide="zap" size="16"></i> 通道</button>
+    <nav class="bg-white border-b border-slate-100 px-8 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex gap-10">
+            <button onclick="window.switchTab('nodes')" id="tab-btn-nodes" class="tab-btn active flex items-center gap-2">节点图谱 <i data-lucide="server" size="16"></i></button>
+            <button onclick="window.switchTab('accounts')" id="tab-btn-accounts" class="tab-btn flex items-center gap-2">账户列表 <i data-lucide="user-square" size="16"></i></button>
+            <button onclick="window.switchTab('chains')" id="tab-btn-chains" class="tab-btn flex items-center gap-2">钞票溯源 <i data-lucide="box" size="16"></i></button>
+            <button onclick="window.switchTab('channels')" id="tab-btn-channels" class="tab-btn flex items-center gap-2">离线通道 <i data-lucide="zap" size="16"></i></button>
         </div>
     </nav>
 
-    <main class="flex-grow bg-slate-50/40">
-        <div id="tab-nodes" class="tab-content active p-6 overflow-hidden h-full">
-            <div class="flex-1 bg-white rounded-[3rem] border border-slate-100 shadow-inner relative overflow-hidden h-full">
-                <svg id="network-svg"></svg>
+    <main class="flex-grow bg-slate-50/50 relative overflow-hidden">
+        <div id="tab-nodes" class="tab-content active overflow-hidden">
+            <div class="flex-1 bg-white relative"><svg id="network-svg"></svg></div>
+        </div>
+        <div id="tab-accounts" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto">
+                <div id="account-grid-local" class="flex flex-wrap gap-6 mb-12"></div>
+                <div id="account-grid-remote" class="flex flex-wrap gap-6"></div>
             </div>
         </div>
-        <div id="tab-accounts" class="tab-content p-12 overflow-y-auto custom-scrollbar">
-            <div class="max-w-7xl mx-auto space-y-16 w-full">
-                <div>
-                    <h3 class="text-xs font-black uppercase text-slate-400 mb-8 flex items-center gap-2 px-1 tracking-[0.3em]"><i data-lucide="shield-check" size="18"></i> 本地私有账户</h3>
-                    <div id="account-grid-local" class="flex flex-wrap gap-6"></div>
-                </div>
-                <div>
-                    <h3 class="text-xs font-black uppercase text-slate-400 mb-8 flex items-center gap-2 px-1 tracking-[0.3em]"><i data-lucide="globe" size="18"></i> 远端发现账户</h3>
-                    <div id="account-grid-remote" class="flex flex-wrap gap-6"></div>
-                </div>
-            </div>
+        <div id="tab-chains" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto"><div id="chain-grid" class="flex flex-wrap gap-6"></div></div>
         </div>
-        <div id="tab-chains" class="tab-content p-12 overflow-y-auto custom-scrollbar">
-            <div id="chain-grid" class="flex flex-wrap gap-6 max-w-7xl mx-auto w-full"></div>
-        </div>
-        <div id="tab-channels" class="tab-content p-12 overflow-y-auto custom-scrollbar">
-            <div id="channel-grid" class="flex flex-wrap gap-6 max-w-7xl mx-auto w-full"></div>
+        <div id="tab-channels" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto"><div id="channel-grid" class="flex flex-wrap gap-6"></div></div>
         </div>
     </main>
 
-    <div id="overlay" class="fixed inset-0 z-50 flex justify-end transition-opacity opacity-0 pointer-events-none">
-        <div id="overlay-content" class="w-full bg-white h-full flex flex-col p-12 transform translate-x-full transition-transform duration-500 max-w-2xl shadow-2xl">
-            <div class="flex justify-between items-center mb-12">
-                <h2 id="overlay-title" class="text-3xl font-black text-slate-900 uppercase tracking-tighter">详情</h2>
-                <button onclick="window.closeOverlay()" class="p-4 hover:bg-slate-100 rounded-full transition-all"><i data-lucide="x" size="28"></i></button>
+    <div id="details-overlay" class="fixed-overlay" onclick="if(event.target==this) window.closeOverlay()">
+        <div id="details-content" onclick="event.stopPropagation()">
+            <div class="p-10 border-b border-slate-100 flex justify-between items-center">
+                <h2 id="overlay-title" class="text-2xl font-black text-slate-900 uppercase">详情</h2>
+                <button onclick="window.closeOverlay()" class="p-3 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
             </div>
-            <div id="overlay-body" class="flex-1 overflow-y-auto custom-scrollbar space-y-10"></div>
+            <div id="overlay-body" class="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-8 pb-20"></div>
         </div>
     </div>
-
-    <div id="ai-chat-window">
-        <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-indigo-600 rounded-t-[2.5rem]">
-            <h3 class="font-black text-white flex items-center gap-3"><i data-lucide="bot" size="24"></i> AOB 协议助手</h3>
-            <button onclick="window.toggleAIChat()" class="p-2 hover:bg-white/10 rounded-full transition-colors text-white"><i data-lucide="chevron-down"></i></button>
-        </div>
-        <div id="ai-messages" class="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar text-sm"></div>
-        <div class="p-6 border-t border-slate-100 flex gap-3">
-            <input id="ai-input" type="text" placeholder="向 AI 提问关于 AOB 的一切..." class="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all">
-            <button onclick="window.sendAIChat()" class="bg-indigo-600 text-white p-3 rounded-2xl shadow-lg hover:bg-indigo-700 transition-all"><i data-lucide="send" size="20"></i></button>
-        </div>
-    </div>
-
-    <script type="module">
-        import { GoogleGenAI } from "@google/genai";
-        const aiModel = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        window.askAI = async (question) => {
-            document.getElementById('ai-chat-window').classList.add('open');
-            addChatMessage('bot', '正在从 AOB 协议库中检索知识点...');
-            try {
-                const response = await aiModel.models.generateContent({
-                    model: 'gemini-3-pro-preview',
-                    contents: question,
-                    config: { systemInstruction: "你是 AOB (Atomic Ownership Blockchains) 协议实验室的首席架构师。详细解释所有权转移、钞票区块链、Speedy Channel 的抵押与提现及其原子性原理。" }
-                });
-                const msgs = document.getElementById('ai-messages');
-                if (msgs.lastElementChild) msgs.lastElementChild.remove();
-                addChatMessage('bot', response.text);
-            } catch (e) {
-                addChatMessage('bot', 'AI 暂时掉线。');
-            }
-        };
-        window.toggleAIChat = () => document.getElementById('ai-chat-window').classList.toggle('open');
-        window.sendAIChat = () => {
-            const input = document.getElementById('ai-input');
-            if (input.value.trim()) { addChatMessage('user', input.value); window.askAI(input.value); input.value = ''; }
-        };
-        function addChatMessage(role, text) {
-            const msgs = document.getElementById('ai-messages');
-            const div = document.createElement('div');
-            div.className = role === 'user' ? 'bg-slate-100 p-5 rounded-3xl rounded-tr-none self-end' : 'bg-indigo-50 p-5 rounded-3xl rounded-tl-none border border-indigo-100';
-            div.innerText = text;
-            msgs.appendChild(div);
-            msgs.scrollTop = msgs.scrollHeight;
-        }
-    </script>
 
     <script>
-        var mqttClient, superUser = null, activeOverlayId = null;
+        var mqttClient;
+        var superUser = null;
         var appInstanceId = Math.random().toString(36).substr(2, 4).toUpperCase();
+        var discoveryBuffer = new Map();
+        var cascadeSession = { active: false, path: [], initiatorIdx: 0 }; 
+
         var simulationState = { 
             nodes: [], users: [], remoteUsers: [], 
             chains: [], speedyChannels: [], step: 0,
@@ -209,538 +150,547 @@
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery'
         };
 
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(hashBuffer))));
-        }
-
-        // 移除 path: '/mqtt'，因为 test.mosquitto.org:8080 通常不需要 path
-        mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { clientId: 'aob_v25_sys_' + appInstanceId, clean: true });
-        mqttClient.on('connect', () => {
-            const st = document.getElementById('mqtt-status');
-            st.innerText = "Broker: Online";
-            st.className = "px-5 py-2 bg-emerald-50 text-emerald-600 text-xs font-black rounded-full uppercase border border-emerald-100 shadow-sm";
-            mqttClient.subscribe(CONFIG.TOPIC_MESH); mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY);
-            updateStepUI();
-        });
-        mqttClient.on('message', (topic, payload) => {
-            try {
-                const data = JSON.parse(payload.toString());
-                if (topic === CONFIG.TOPIC_DISCOVERY) handleDiscovery(data);
-                else if (topic === CONFIG.TOPIC_MESH) handleMesh(data);
-            } catch (e) {}
-        });
-
-        function handleDiscovery(data) {
-            if (data.instance === appInstanceId) return;
-            let n = simulationState.nodes.find(x => x.id === data.id);
-            if (!n) {
-                n = { id: data.id, instance: data.instance, neighbors: [], logs: [], seenIds: new Set() };
-                simulationState.nodes.push(n);
-            }
-            simulationState.nodes.filter(x => x.instance === appInstanceId).forEach(ln => {
-                if (ln.neighbors.length < 5 && !ln.neighbors.includes(data.id)) { 
-                    ln.neighbors.push(data.id); n.neighbors.push(ln.id); 
-                }
-            });
-            if (simulation) updateNetworkViz();
-        }
-
-        function handleMesh(data) {
-            if (data.block) updateGlobalState(data.block);
-            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
-                if (data.block) logToNode(n, `收到区块 [${data.block.type}] ID:${data.block.id.slice(0,10)}`, data.block);
-                if (data.msg) logToNode(n, `广播消息 [P2P] 来自 ${data.from.slice(0,8)}: ${data.msg}`, data);
-            });
-            renderAll();
-        }
-
-        function updateGlobalState(block) {
-            if (simulationState.processedIds.has(block.id)) return;
-            simulationState.processedIds.add(block.id);
-
-            let chain = simulationState.chains.find(c => c.genesisId === block.chainRootId);
-            if (block.type === 'GENESIS' && !chain) {
-                const parts = block.data.split('\n');
-                const s = parseInt(parts[1]);
-                let d = 1; if(s>80) d=50; else if(s>60) d=20; else if(s>40) d=10; else if(s>20) d=5;
-                chain = { serial: s, denomination: d, genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
-                simulationState.chains.push(chain);
-            } else if (chain) {
-                chain.blocks.push(block);
-                if (block.type === 'PAYMENT') {
-                    chain.currentOwner = block.target;
-                    chain.status = 'FREE';
-                    if (block.fromChannel) {
-                        const chan = simulationState.speedyChannels.find(c => c.id === block.fromChannel);
-                        if (chan) {
-                            const p = chan.participants.find(pt => pt.pub === block.author);
-                            if (p) p.balance -= chain.denomination;
-                        }
-                    }
-                    if (!simulationState.users.find(u => u.pub === block.target) && !simulationState.remoteUsers.includes(block.target)) {
-                        simulationState.remoteUsers.push(block.target);
-                    }
-                } else if (block.type === 'MORTGAGE') {
-                    chain.status = 'MORTGAGED';
-                    const chan = simulationState.speedyChannels.find(c => c.id === block.target);
-                    if (chan) {
-                        const p = chan.participants.find(pt => pt.pub === block.author);
-                        if (p) p.balance += chain.denomination;
-                    }
-                }
-            }
-            if (block.type === 'SPEEDY_CHANNEL_ROOT') {
-                if (!simulationState.speedyChannels.find(c => c.id === block.id)) {
-                    const lines = block.data.split('\n');
-                    simulationState.speedyChannels.push({ id: block.id, participants: [{pub:lines[2], fp:lines[2].slice(-8), balance:0}, {pub:lines[4], fp:lines[4].slice(-8), balance:0}] });
-                }
-            }
-        }
-
-        function logToNode(node, text, raw) {
-            node.logs.unshift({ time: new Date().toLocaleTimeString(), text, raw });
-            if (node.logs.length > 50) node.logs.pop();
-            if (activeOverlayId === node.id) window.openNodeOverlay(node.id);
-        }
-
+        // --- Network ---
         window.initNetwork = function() {
-            simulationState.nodes = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
+            const locals = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
                 id: `NODE-${appInstanceId}-${i}`, instance: appInstanceId, neighbors: [], logs: [], seenIds: new Set()
             }));
-            for (let i = 0; i < CONFIG.NODE_COUNT; i++) {
-                const n = simulationState.nodes[i];
-                while (n.neighbors.length < 4) {
-                    const t = simulationState.nodes[Math.floor(Math.random() * CONFIG.NODE_COUNT)];
-                    if (t.id !== n.id && !n.neighbors.includes(t.id)) { n.neighbors.push(t.id); t.neighbors.push(n.id); }
+
+            discoveryBuffer.forEach((inst, id) => {
+                if (!simulationState.nodes.find(n => n.id === id)) {
+                    simulationState.nodes.push({ id, instance: inst, neighbors: [], logs: [], seenIds: new Set() });
                 }
-            }
+            });
+
+            simulationState.nodes = [...locals, ...simulationState.nodes];
+            const all = simulationState.nodes;
+
+            locals.forEach(n => {
+                while (n.neighbors.length < 4) {
+                    const t = all[Math.floor(Math.random() * all.length)];
+                    if (t.id !== n.id && !n.neighbors.includes(t.id) && t.neighbors.length < 7) {
+                        n.neighbors.push(t.id); t.neighbors.push(n.id);
+                    }
+                    if (all.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
+                }
+            });
+
             initNetworkViz();
             setInterval(() => {
-                simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
-                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ id: n.id, instance: appInstanceId }));
-                });
-            }, 10000);
+                const ln = simulationState.nodes.filter(n => n.instance === appInstanceId);
+                const rNode = ln[Math.floor(Math.random() * ln.length)];
+                if (mqttClient && mqttClient.connected && rNode) {
+                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ id: rNode.id, instance: appInstanceId }));
+                }
+            }, 5000);
+
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
         };
 
+        // --- Accounts ---
         window.initAccounts = async function() {
-            superUser = await generateKeyPair();
-            simulationState.superUser = superUser;
+            superUser = await generateKeyPair(); simulationState.superUser = superUser;
             for (let i = 0; i < CONFIG.ACCOUNT_COUNT; i++) {
-                const kp = await generateKeyPair();
-                kp.nodes = simulationState.nodes.sort(() => Math.random() - 0.5).slice(0, 3).map(n => n.id);
+                const kp = await generateKeyPair(); 
+                kp.nodes = simulationState.nodes.filter(n => n.instance === appInstanceId).sort(() => Math.random() - 0.5).slice(0, 3).map(n => n.id);
                 simulationState.users.push(kp);
             }
             simulationState.step = 2; updateStepUI(); window.switchTab('accounts');
         };
 
+        // --- Assets ---
         window.initBanknotes = async function() {
             const h = await sha256("AOB Definition Standard Document V1");
             for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                const gData = `${h}\n${s}\n${superUser.pub}`;
-                const gId = await sha256(gData);
+                const gData = `${h}\n${s}\n${superUser.pub}`; const gId = await sha256(gData);
                 const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
                 const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
                 const payData = `PREV:${gId}\nTYPE:PAYMENT\nTARGET:${target.pub}\nTS:${Date.now()}`;
-                const pId = await signData(payData, superUser.keyPair.privateKey);
-                const payment = { id: pId, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId };
+                const sig = await signData(payData, superUser.keyPair.privateKey);
+                const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId };
                 updateGlobalState(genesis); updateGlobalState(payment);
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+                }
             }
             simulationState.step = 3; updateStepUI(); window.switchTab('chains');
         };
 
+        // --- Channels ---
         window.initChannels = async function() {
-            const u = simulationState.users;
-            for (let i = 0; i < u.length; i++) {
-                const u1 = u[i];
-                let cCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === u1.pub)).length;
-                if (cCount < 4) {
-                    const others = u.filter(x => x.pub !== u1.pub).sort(() => Math.random() - 0.5);
-                    for (const u2 of others) {
-                        if (cCount >= 4) break;
-                        const sorted = [u1.pub, u2.pub].sort();
-                        const rootData = `Speedy Channel\n${Date.now()}\n${sorted[0]}\n${u1.nodes[0]}\n${sorted[1]}\n${u2.nodes[0]}`;
-                        const cId = await sha256(rootData);
-                        if (!simulationState.speedyChannels.find(c => c.id === cId)) {
-                            const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
-                            updateGlobalState(block);
-                            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
-                            
-                            // 自动抵押钞票以提供初始流动性 - 优先选用大面值
-                            for(let userObj of [u1, u2]) {
-                                let userFreeChains = simulationState.chains.filter(c => c.currentOwner === userObj.pub && c.status === 'FREE');
-                                userFreeChains.sort((a, b) => b.denomination - a.denomination);
-                                
-                                const toMortgage = userFreeChains.slice(0, 2);
-                                for(let chain of toMortgage) {
-                                    const lastBlock = chain.blocks[chain.blocks.length - 1];
-                                    const mData = `PREV:${lastBlock.id}\nTYPE:MORTGAGE\nTARGET:${cId}\nTS:${Date.now()}`;
-                                    const sig = await signData(mData, userObj.keyPair.privateKey);
-                                    const mBlock = { 
-                                        id: sig, 
-                                        type: 'MORTGAGE', 
-                                        data: mData, 
-                                        author: userObj.pub, 
-                                        target: cId, 
-                                        chainRootId: chain.genesisId 
-                                    };
-                                    updateGlobalState(mBlock);
-                                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
-                                }
+            const users = simulationState.users;
+            for(let i=0; i<users.length; i++) {
+                const u1 = users[i];
+                let count = 0;
+                for(let j=0; j<users.length; j++) {
+                    const u2 = users[j];
+                    if (i === j || count >= 4) continue;
+                    const sorted = [u1.pub, u2.pub].sort();
+                    const rootData = `Speedy Channel\n${Date.now()}\n${sorted[0]}\n${u1.nodes[0]}\n${sorted[1]}\n${u2.nodes[0]}`;
+                    const cId = await sha256(rootData);
+                    if (!simulationState.speedyChannels.find(x => x.id === cId)) {
+                        const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
+                        updateGlobalState(block);
+                        if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                        
+                        [u1, u2].forEach(async u => {
+                            const chains = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE')
+                                .sort((a,b) => b.denomination - a.denomination).slice(0, 2);
+                            for(let chain of chains) {
+                                const mData = `PREV:${chain.blocks[chain.blocks.length-1].id}\nTYPE:MORTGAGE\nTARGET:${cId}\nTS:${Date.now()}`;
+                                const sig = await signData(mData, u.keyPair.privateKey);
+                                const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: u.pub, target: cId, chainRootId: chain.genesisId };
+                                updateGlobalState(mBlock);
+                                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
                             }
-                            cCount++;
-                        }
+                        });
+                        count++;
                     }
                 }
             }
             simulationState.step = 4; updateStepUI(); window.switchTab('channels');
         };
 
-        async function generateKeyPair() {
-            const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-            const pubEx = await crypto.subtle.exportKey("spki", kp.publicKey);
-            const pubStr = btoa(String.fromCharCode(...new Uint8Array(pubEx)));
-            return { pub: pubStr, fp: pubStr.slice(-8).toUpperCase(), keyPair: kp };
-        }
-        async function signData(data, privKey) {
-            const sig = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, privKey, new TextEncoder().encode(data));
-            return btoa(String.fromCharCode(...new Uint8Array(sig)));
-        }
+        // --- Logic Updates ---
+        function updateGlobalState(block) {
+            if (simulationState.processedIds.has(block.id)) return;
+            simulationState.processedIds.add(block.id);
 
-        let simulation, svg, g;
-        function initNetworkViz() {
-            svg = d3.select("#network-svg");
-            const w = +svg.node().getBoundingClientRect().width, h = +svg.node().getBoundingClientRect().height;
-            g = svg.append("g");
-            svg.call(d3.zoom().scaleExtent([0.2, 4]).on("zoom", (e) => g.attr("transform", e.transform)));
-            simulation = d3.forceSimulation().force("link", d3.forceLink().id(d => d.id).distance(120)).force("charge", d3.forceManyBody().strength(-300)).force("center", d3.forceCenter(w/2, h/2));
-            updateNetworkViz();
-        }
-        function updateNetworkViz() {
-            const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
-            const links = [];
-            simulationState.nodes.forEach(n => n.neighbors.forEach(nb => { if (n.id < nb) links.push({ source: n.id, target: nb }); }));
-            g.selectAll("*").remove();
-            const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
-            const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 10).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node").on("click", (e, d) => window.openNodeOverlay(d.id));
-            simulation.nodes(nodes); simulation.force("link").links(links); simulation.alpha(1).restart();
-            simulation.on("tick", () => {
-                link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-                node.attr("cx", d => d.x).attr("cy", d => d.y);
+            const logMsg = `区块广播: ${block.type} (${block.id.slice(0,8)})`;
+            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
+                n.logs.unshift({ time: new Date().toLocaleTimeString(), text: logMsg });
+                if (n.logs.length > 50) n.logs.pop();
             });
+
+            let c = simulationState.chains.find(x => x.genesisId === block.chainRootId);
+            if (block.type === 'GENESIS' && !c) {
+                const parts = block.data.split('\n'); const s = +parts[1]; let d = 1; if(s>80) d=50; else if(s>60) d=20; else if(s>40) d=10; else if(s>20) d=5;
+                c = { serial: s, denomination: d, genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
+                simulationState.chains.push(c);
+            } else if (c) {
+                c.blocks.push(block);
+                if (block.type === 'PAYMENT') {
+                    if (block.fromChannel) {
+                        const ch = simulationState.speedyChannels.find(x=>x.id===block.fromChannel);
+                        if(ch) ch.participants.find(p=>p.pub===block.author).balance -= c.denomination;
+                    }
+                    c.currentOwner = block.target; c.status = 'FREE';
+                    if(!simulationState.users.find(u=>u.pub===block.target) && !simulationState.remoteUsers.includes(block.target)) {
+                        simulationState.remoteUsers.push(block.target);
+                    }
+                } else if (block.type === 'MORTGAGE') {
+                    c.status = 'MORTGAGED';
+                    const ch = simulationState.speedyChannels.find(x=>x.id===block.target);
+                    if(ch) { const p = ch.participants.find(p=>p.pub===block.author); if(p) p.balance += c.denomination; }
+                }
+            }
+            if (block.type === 'SPEEDY_CHANNEL_ROOT' && !simulationState.speedyChannels.find(x => x.id === block.id)) {
+                const l = block.data.split('\n');
+                simulationState.speedyChannels.push({ id: block.id, participants: [{pub:l[2], fp:l[2].slice(-8), balance:0}, {pub:l[4], fp:l[4].slice(-8), balance:0}] });
+            }
         }
 
-        function renderAll() {
-            const lGrid = document.getElementById('account-grid-local'); if (lGrid) {
-                lGrid.innerHTML = '';
-                simulationState.users.forEach(u => {
-                    const bal = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE').reduce((s, c) => s + c.denomination, 0);
-                    const el = document.createElement('div'); el.className = `card flex flex-col items-center gap-3 ${activeOverlayId===u.pub?'active-selection':''}`;
-                    el.onclick = () => window.openAccountOverlay(u.pub);
-                    el.innerHTML = `<div class="p-3 bg-indigo-50 text-indigo-600 rounded-full"><i data-lucide="user"></i></div><div class="text-sm font-black text-indigo-900">$${bal}</div><div class="text-[10px] mono text-slate-400 font-bold">${u.fp}</div>`;
-                    lGrid.appendChild(el);
-                });
-            }
-            const rGrid = document.getElementById('account-grid-remote'); if (rGrid) {
-                rGrid.innerHTML = '';
-                simulationState.remoteUsers.forEach(pub => {
-                    const el = document.createElement('div'); el.className = 'card border-dashed opacity-50 flex flex-col items-center gap-2';
-                    el.onclick = () => window.openAccountOverlay(pub, false);
-                    el.innerHTML = `<div class="p-2 bg-slate-100 text-slate-500 rounded-full"><i data-lucide="globe"></i></div><div class="text-[10px] mono font-bold text-slate-400">${pub.slice(-8)}</div>`;
-                    rGrid.appendChild(el);
-                });
-            }
-            const cGrid = document.getElementById('chain-grid'); if (cGrid) {
-                cGrid.innerHTML = '';
-                simulationState.chains.forEach(c => {
-                    const el = document.createElement('div'); el.className = `card text-center ${c.status==='MORTGAGED'?'opacity-30 border-dashed border-indigo-400':''} ${activeOverlayId===c.genesisId?'active-selection':''}`;
-                    el.onclick = () => window.openChainOverlay(c.genesisId);
-                    el.innerHTML = `<div class="text-xl font-black text-emerald-600">$${c.denomination}</div><div class="text-[9px] mono text-slate-400 mt-1">${c.genesisId.slice(0,8)}</div>${c.status==='MORTGAGED'?'<div class="text-[8px] font-black text-indigo-500 mt-2 uppercase tracking-widest">Locked</div>':''}`;
-                    cGrid.appendChild(el);
-                });
-            }
-            const chGrid = document.getElementById('channel-grid'); if (chGrid) {
-                chGrid.innerHTML = '';
-                simulationState.speedyChannels.forEach(c => {
-                    const el = document.createElement('div'); el.className = `card ${activeOverlayId===c.id?'active-selection':''}`;
-                    el.onclick = () => window.openChannelOverlay(c.id);
-                    el.innerHTML = `<div class="flex justify-between text-[10px] text-indigo-500 font-black"><span>${c.id.slice(0,10)}</span><i data-lucide="zap" size="12"></i></div><div class="flex justify-between items-center text-center mt-3"><div class="flex-1"><div>$${c.participants[0].balance}</div><div class="text-[8px] mono opacity-40 uppercase font-black">${c.participants[0].fp}</div></div><div class="w-px h-6 bg-slate-100 mx-2"></div><div class="flex-1"><div>$${c.participants[1].balance}</div><div class="text-[8px] mono opacity-40 uppercase font-black">${c.participants[1].fp}</div></div></div>`;
-                    chGrid.appendChild(el);
-                });
-            }
-            if (window.lucide) lucide.createIcons();
-        }
-
-        window.openNodeOverlay = function(id) {
-            activeOverlayId = id; const n = simulationState.nodes.find(x => x.id === id);
-            window.openOverlay(`节点控制台: ${id}`);
-            document.getElementById('overlay-body').innerHTML = `
-                <div class="space-y-8">
-                    <div class="p-6 bg-slate-50 border rounded-3xl"><h4 class="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest flex justify-between items-center">P2P 实时广播记录 <span class="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[8px]">${n.logs.length}</span></h4>
-                    <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                        ${n.logs.map(l => `<div class="p-4 bg-white border rounded-2xl text-[10px] mono shadow-sm transition-all hover:scale-[1.01]"><b>${l.time}</b>: <span class="text-indigo-600 font-bold">${l.text}</span><br><details class="mt-2"><summary class="cursor-pointer text-slate-300 hover:text-indigo-400">查看 Payload</summary><pre class="text-[8px] mt-1 p-3 bg-slate-50 rounded-xl text-slate-500 overflow-x-auto select-all">${JSON.stringify(l.raw || {}, null, 2)}</pre></details></div>`).join('') || '<div class="text-slate-300 italic text-center py-8">等待网络数据流...</div>'}
-                    </div></div>
-                    <div class="p-6 bg-indigo-50 border border-indigo-100 rounded-3xl space-y-4"><h4 class="text-xs font-black uppercase text-indigo-400 tracking-widest">邻接节点列表</h4>
-                        <div class="flex flex-wrap gap-2">${n.neighbors.map(nb => `<div class="px-3 py-1 bg-white border rounded-full text-[9px] font-black mono text-indigo-600">${nb}</div>`).join('') || '孤立节点'}</div>
-                    </div>
-                    <div class="p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-md"><h4 class="text-xs font-black uppercase text-slate-400">广播测试工具</h4>
-                        <div class="flex gap-2">
-                            <input id="broadcast-msg" type="text" placeholder="输入广播内容..." class="flex-1 bg-slate-50 p-3 rounded-2xl text-xs border outline-none">
-                            <button onclick="window.sendBroadcast('${id}')" class="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">广播</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            if (window.lucide) lucide.createIcons();
-        };
-
-        window.sendBroadcast = function(nid) {
-            const msg = document.getElementById('broadcast-msg').value; if(!msg) return;
-            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ msg, from: nid }));
-            document.getElementById('broadcast-msg').value = '';
-        };
-
-        window.openAccountOverlay = function(pub, local=true) {
-            activeOverlayId = pub; const owned = simulationState.chains.filter(c => c.currentOwner === pub);
-            window.openOverlay(`账户概览: ${pub.slice(-8)}`);
-            document.getElementById('overlay-body').innerHTML = `
-                <div class="space-y-8">
-                    <div class="p-10 bg-indigo-600 rounded-[3rem] text-white shadow-2xl text-center relative overflow-hidden">
-                        <div class="text-xs opacity-70 font-black uppercase tracking-widest">原子可用余额 (FREE)</div>
-                        <div class="text-6xl font-black mt-3 leading-none">$${owned.filter(c => c.status === 'FREE').reduce((s, c) => s + c.denomination, 0)}</div>
-                    </div>
-                    <div class="p-6 bg-slate-50 border rounded-3xl space-y-4"><h4 class="text-xs font-black uppercase text-slate-400 tracking-widest">账户公钥 (Identity)</h4>
-                        <div class="mono text-[9px] break-all leading-relaxed select-all bg-white p-4 rounded-2xl border border-slate-100">${pub}</div>
-                    </div>
-                    <div class="space-y-4"><h4 class="text-xs font-black uppercase text-slate-400 tracking-widest">持有的区块链清单</h4>
-                        <div class="grid grid-cols-1 gap-3">${owned.map(c => `<div class="p-4 bg-white border rounded-2xl flex justify-between items-center shadow-sm"><div><div class="text-sm font-black text-emerald-600">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 mt-1">ID: ${c.genesisId.slice(0,16)}...</div></div><div class="px-3 py-1 rounded-full text-[8px] font-black uppercase ${c.status==='FREE'?'bg-emerald-50 text-emerald-600':'bg-indigo-50 text-indigo-600'}">${c.status}</div></div>`).join('') || '<div class="text-slate-300 italic text-center py-6">无资产</div>'}</div>
-                    </div>
-                </div>
-            `;
-        };
-
-        window.openChainOverlay = async function(id) {
-            activeOverlayId = id; const chain = simulationState.chains.find(c => c.genesisId === id);
-            window.openOverlay(`区块链溯源: ${id.slice(0,10)}`);
-            const owner = simulationState.users.find(u => u.pub === chain.currentOwner);
-            const isMortgaged = chain.status === 'MORTGAGED';
-            const canAction = owner && !isMortgaged;
-            
-            document.getElementById('overlay-body').innerHTML = `
-                <div class="space-y-8">
-                    <div class="p-8 bg-emerald-50 border-4 border-emerald-100 rounded-[2.5rem] text-center shadow-inner relative">
-                        <div class="text-xs text-emerald-600 font-black uppercase tracking-widest">区块链钞票面值</div>
-                        <div class="text-6xl font-black text-emerald-600 mt-3">$${chain.denomination}</div>
-                        <div class="text-[10px] text-emerald-400 font-black mt-6 uppercase">主人: ${chain.currentOwner.slice(-8)} | 状态: ${chain.status}</div>
-                    </div>
-                    ${canAction ? `
-                        <div class="p-8 bg-white border-2 border-slate-100 rounded-[2.5rem] space-y-6 shadow-xl">
-                            <h4 class="text-xs font-black uppercase text-slate-400 tracking-widest">添加支付区块转移所有权</h4>
-                            <select id="pay-target" class="w-full bg-slate-50 border p-4 rounded-2xl text-[10px] mono outline-none">
-                                ${simulationState.users.filter(u => u.pub !== chain.currentOwner).map(u => `<option value="${u.pub}">${u.pub} (本地)</option>`).join('')}
-                                ${simulationState.remoteUsers.map(pub => `<option value="${pub}">${pub} (远端发现)</option>`).join('')}
-                            </select>
-                            <button onclick="window.execPayment('${id}')" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xs shadow-2xl active:scale-95 transition-all">广播支付区块</button>
-                        </div>
-                        <div class="p-8 bg-indigo-50 border border-indigo-100 rounded-[2.5rem] space-y-6 shadow-md">
-                            <h4 class="text-xs font-black uppercase text-indigo-400 tracking-widest">抵押资产到快速通道</h4>
-                            <select id="mortgage-target" class="w-full bg-white border p-4 rounded-2xl text-[10px] mono outline-none">
-                                ${simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === chain.currentOwner)).map(c => `<option value="${c.id}">通道: ${c.id.slice(0,12)}...</option>`).join('')}
-                            </select>
-                            <button onclick="window.execMortgage('${id}')" class="w-full bg-indigo-500 text-white py-5 rounded-2xl font-black text-xs shadow-lg">广播抵押区块</button>
-                        </div>
-                    ` : `
-                        <div class="p-10 bg-amber-50 text-amber-700 rounded-[2.5rem] text-xs font-black text-center border-2 border-amber-100 leading-relaxed italic shadow-sm">
-                            ${isMortgaged ? '资产已处于抵押锁定状态，无法直接支付。<br>若要支付，请从对应 Speedy Channel 执行提现操作。' : '当前不可操作。'}
-                        </div>
-                    `}
-                    <div class="space-y-4">
-                        <h4 class="text-xs font-black uppercase text-slate-400 tracking-widest">全量区块历史</h4>
-                        <div class="space-y-3">${chain.blocks.map((b, i) => `<div class="p-4 bg-white border rounded-2xl text-[9px] mono leading-relaxed shadow-sm">#${i} [${b.type}] ID: <span class="text-indigo-600">${b.id.slice(0,32)}...</span></div>`).join('')}</div>
-                    </div>
-                </div>
-            `;
-            if (window.lucide) lucide.createIcons();
-        };
-
-        window.execPayment = async function(chainId) {
-            const chain = simulationState.chains.find(c => c.genesisId === chainId);
-            const targetPub = document.getElementById('pay-target').value;
-            const owner = simulationState.users.find(u => u.pub === chain.currentOwner);
-            const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${targetPub}\nTS:${Date.now()}`;
-            const sig = await signData(data, owner.keyPair.privateKey);
-            const block = { id: sig, type: 'PAYMENT', data, author: chain.currentOwner, target: targetPub, chainRootId: chainId };
-            updateGlobalState(block); mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
-            window.openChainOverlay(chainId);
-        };
-
-        window.execMortgage = async function(chainId) {
-            const chain = simulationState.chains.find(c => c.genesisId === chainId);
-            const chanId = document.getElementById('mortgage-target').value;
-            const owner = simulationState.users.find(u => u.pub === chain.currentOwner);
-            const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\nTYPE:MORTGAGE\nTARGET:${chanId}\nTS:${Date.now()}`;
-            const sig = await signData(data, owner.keyPair.privateKey);
-            const block = { id: sig, type: 'MORTGAGE', data, author: chain.currentOwner, target: chanId, chainRootId: chainId };
-            updateGlobalState(block); mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
-            window.openChainOverlay(chainId);
-        };
-
-        window.openChannelOverlay = function(id) {
-            activeOverlayId = id; const chan = simulationState.speedyChannels.find(c => c.id === id);
-            const p1 = chan.participants[0], p2 = chan.participants[1];
-            const mortgaged = simulationState.chains.filter(c => c.status === 'MORTGAGED' && (c.blocks[c.blocks.length-1].target === id));
-            window.openOverlay(`通道流动性: ${id.slice(0,10)}`);
-            document.getElementById('overlay-body').innerHTML = `
-                <div class="p-10 bg-slate-900 rounded-[3rem] flex items-center justify-between shadow-2xl relative overflow-hidden">
-                    <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/20 to-transparent pointer-events-none"></div>
-                    <div class="flex-1 z-10 text-white text-center"><div class="text-4xl font-black">$${p1.balance}</div><div class="text-[10px] mono text-indigo-400 font-black mt-2 uppercase tracking-widest">${p1.fp}</div></div>
-                    <div class="px-8 text-indigo-500 z-10 animate-pulse"><i data-lucide="zap" size="48"></i></div>
-                    <div class="flex-1 z-10 text-white text-center"><div class="text-4xl font-black">$${p2.balance}</div><div class="text-[10px] mono text-indigo-400 font-black mt-2 uppercase tracking-widest">${p2.fp}</div></div>
-                </div>
-                <div class="p-8 bg-white border-2 border-slate-100 rounded-[2.5rem] space-y-6 shadow-xl">
-                    <h4 class="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">通道内原子结算 <button onclick="window.askAI('如何使用快速通道进行原子转移？')" class="ai-btn"><i data-lucide="help-circle" size="12"></i></button></h4>
-                    <div class="flex gap-4">
-                        <select id="chan-payer" class="flex-1 bg-slate-50 p-4 rounded-2xl text-xs font-black border-none outline-none focus:ring-2 focus:ring-indigo-500 transition-all">${chan.participants.map((p, i) => `<option value="${i}">${p.fp} 支付</option>`).join('')}</select>
-                        <input id="chan-amt" type="number" placeholder="金额" class="w-32 bg-slate-50 p-4 rounded-2xl text-xs font-black border-none outline-none">
-                    </div>
-                    <button onclick="window.execChannelPay('${id}')" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl active:scale-95 transition-all">即时结算</button>
-                    <button onclick="window.startCascade('${id}')" class="w-full border-2 border-dashed border-indigo-200 text-indigo-500 py-4 rounded-2xl text-[10px] font-black uppercase hover:bg-indigo-50">开启级联支付导向</button>
-                </div>
-                <div id="cascade-steps-box" class="hidden space-y-4 p-6 bg-indigo-50/50 border-2 border-dashed border-indigo-100 rounded-[2rem]"></div>
-                <div class="space-y-6">
-                    <h4 class="text-xs font-black uppercase text-slate-400 tracking-widest">锁定的资产 (Collateral)</h4>
-                    <div class="grid grid-cols-1 gap-4">
-                        ${mortgaged.map(c => {
-                            const isLocal = simulationState.users.find(u => u.pub === c.currentOwner);
-                            return `
-                            <div class="p-6 bg-white border-2 border-slate-50 rounded-[2rem] flex justify-between items-center shadow-sm">
-                                <div><div class="text-lg font-black text-emerald-600">钞票 $${c.denomination}</div><div class="text-[9px] text-slate-400 mono font-bold">Root ID: ${c.genesisId.slice(0,16)}...</div></div>
-                                ${isLocal ? `<button onclick="window.execWithdraw('${c.genesisId}','${id}')" class="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl">提现解锁</button>` : '<span class="text-[10px] text-slate-300 font-black italic uppercase tracking-tighter">Remote Asset</span>'}
-                            </div>
-                        `}).join('') || '<div class="text-slate-300 italic text-center py-10">该通道目前无任何抵押物。</div>'}
-                    </div>
-                </div>
-            `;
-            if (window.lucide) lucide.createIcons();
-        };
-
-        window.execChannelPay = function(cid) {
-            const chan = simulationState.speedyChannels.find(c => c.id === cid);
-            const pIdx = +document.getElementById('chan-payer').value;
-            const amt = +document.getElementById('chan-amt').value; if(isNaN(amt)||amt<=0) return;
-            const s = chan.participants[pIdx], r = chan.participants[pIdx === 0 ? 1 : 0];
-            if (s.balance >= amt) { 
-                s.balance -= amt; r.balance += amt; 
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ msg: `[Speedy Atomic Pay] $${amt}: ${s.fp} -> ${r.fp}`, from: cid }));
-                window.openChannelOverlay(cid); 
-            } else alert("流动性余额不足，请先向通道充值。");
-        };
-
-        window.execWithdraw = async function(chainId, channelId) {
-            const chain = simulationState.chains.find(c => c.genesisId === chainId);
-            const chan = simulationState.speedyChannels.find(c => c.id === channelId);
-            const owner = simulationState.users.find(u => u.pub === chain.currentOwner);
-            const part = chan.participants.find(pt => pt.pub === chain.currentOwner);
-            if (part.balance >= chain.denomination) {
-                const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${chain.currentOwner}\nTS:${Date.now()}`;
-                const sig = await signData(data, owner.keyPair.privateKey);
-                const block = { id: sig, type: 'PAYMENT', data, author: chain.currentOwner, target: chain.currentOwner, chainRootId: chainId, fromChannel: channelId };
-                updateGlobalState(block); mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
-                window.openChannelOverlay(channelId);
-            } else alert("通道余额不足，无法提取钞票。");
-        };
-
-        window.startCascade = function(cid) {
-            const box = document.getElementById('cascade-steps-box'); box.classList.remove('hidden');
-            const payerIdx = +document.getElementById('chan-payer').value;
-            const amt = +document.getElementById('chan-amt').value || 1;
-            window.cascadePath = [cid]; window.renderCascadeUI(cid, payerIdx, amt);
-        };
-
-        window.renderCascadeUI = function(lastCid, lastSenderIdx, amt) {
-            const box = document.getElementById('cascade-steps-box');
-            const chan = simulationState.speedyChannels.find(c => c.id === lastCid);
-            const curR = chan.participants[lastSenderIdx === 0 ? 1 : 0];
-            box.innerHTML = `<div class="p-3 bg-indigo-600 text-white text-[10px] font-black rounded-xl text-center shadow-lg uppercase">级联拓扑: ${window.cascadePath.map(p=>p.slice(0,6)).join(' → ')}</div>`;
-            const ncs = simulationState.speedyChannels.filter(c => !window.cascadePath.includes(c.id) && c.participants.some(p => p.pub === curR.pub && p.balance >= amt));
-            ncs.forEach(nc => {
-                const target = nc.participants.find(p => p.pub !== curR.pub);
-                const btn = document.createElement('button');
-                btn.className = 'w-full p-4 bg-white border border-slate-200 rounded-2xl text-[10px] font-black flex justify-between mt-3 hover:bg-indigo-50 shadow-sm transition-all';
-                btn.innerHTML = `<span>跳跃至接力伙伴 ${target.fp}</span><span class="text-indigo-600">($${target.balance} 流动性)</span>`;
-                btn.onclick = () => { window.cascadePath.push(nc.id); const idx = nc.participants.findIndex(p => p.pub === curR.pub); window.renderCascadeUI(nc.id, idx, amt); };
-                box.appendChild(btn);
-            });
-            if (window.cascadePath.length > 1) {
-                const exec = document.createElement('button');
-                exec.className = 'w-full bg-emerald-600 text-white py-5 rounded-[1.5rem] font-black text-xs mt-6 shadow-2xl active:scale-95 transition-all uppercase tracking-widest';
-                exec.innerText = `原子级联执行 (${window.cascadePath.length} 级跳转)`;
-                exec.onclick = () => {
-                    let curP = simulationState.speedyChannels.find(c => c.id === window.cascadePath[0]).participants[+document.getElementById('chan-payer').value].pub;
-                    window.cascadePath.forEach(id => {
-                        const c = simulationState.speedyChannels.find(cc => cc.id === id);
-                        const s = c.participants.find(p => p.pub === curP);
-                        const r = c.participants.find(p => p.pub !== curP);
-                        s.balance -= amt; r.balance += amt; curP = r.pub;
-                    });
-                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ msg: `[Cascade Atomic Transfer] $${amt} 已在级联拓扑中成功转移`, from: window.cascadePath[0] }));
-                    alert("级联转账原子成功！"); window.openChannelOverlay(window.cascadePath[0]);
-                };
-                box.appendChild(exec);
-            }
-        };
-
+        // --- UI Rendering ---
         window.switchTab = function(id) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.getElementById(`tab-${id}`).classList.add('active');
-            
-            // 修复视觉激活样式
-            const tabs = ['nodes', 'accounts', 'chains', 'channels'];
-            tabs.forEach(tid => {
-                const btn = document.getElementById(`tab-btn-${tid}`);
-                if(!btn) return;
-                if(tid === id) {
-                    btn.classList.add('border-indigo-600', 'text-indigo-600');
-                    btn.classList.remove('border-transparent', 'text-slate-400');
-                } else {
-                    btn.classList.remove('border-indigo-600', 'text-indigo-600');
-                    btn.classList.add('border-transparent', 'text-slate-400');
-                }
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.remove('active');
+                if(b.id === `tab-btn-${id}`) b.classList.add('active');
             });
-            if (id === 'nodes' && simulation) updateNetworkViz();
+            if(id === 'nodes' && simulation) updateNetworkViz();
+            window.renderAll();
         };
 
-        function updateStepUI() {
-            const bIds = ['btn-init-net', 'btn-init-accounts', 'btn-init-assets', 'btn-init-channels'];
-            bIds.forEach((id, i) => {
-                const b = document.getElementById(id); if(!b) return;
-                b.style.display = i < simulationState.step ? 'none' : 'flex';
-                b.disabled = i !== simulationState.step;
-                if(i === simulationState.step) {
-                    b.classList.add('btn-active', 'guide-pulse');
-                    b.classList.remove('btn-inactive');
-                } else {
-                    b.classList.remove('btn-active', 'guide-pulse');
-                    b.classList.add('btn-inactive');
+        window.renderAll = function() {
+            // 区块链列表：区分 本地（蓝）、远端（黄）、抵押（灰）
+            const cGrid = document.getElementById('chain-grid'); if(cGrid) {
+                cGrid.innerHTML = '';
+                simulationState.chains.forEach(c => {
+                    const isLocal = simulationState.users.some(u => u.pub === c.currentOwner);
+                    const el = document.createElement('div');
+                    
+                    let stateClass = "chain-remote"; // 默认黄色 (远端)
+                    if (c.status === 'MORTGAGED') {
+                        stateClass = "chain-mortgaged"; // 灰色 (抵押)
+                    } else if (isLocal) {
+                        stateClass = "chain-local"; // 蓝色 (本地)
+                    }
+                    
+                    el.className = `card text-center ${stateClass}`;
+                    el.onclick = () => window.openChainOverlay(c.genesisId);
+                    el.innerHTML = `
+                        <div class="text-xl font-black chain-val">$${c.denomination}</div>
+                        <div class="text-[9px] mono text-slate-500 font-bold mt-1 uppercase">ID: ${c.genesisId.slice(0,8)}</div>
+                        <div class="text-[7px] opacity-70 mt-2 font-black uppercase tracking-widest">${isLocal ? 'Local' : (c.status === 'MORTGAGED' ? 'Locked' : 'Remote')}</div>
+                    `;
+                    cGrid.appendChild(el);
+                });
+            }
+
+            const lGrid = document.getElementById('account-grid-local'); if(lGrid) {
+                lGrid.innerHTML = '';
+                simulationState.users.forEach(u => {
+                    const bal = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE').reduce((s,c)=>s+c.denomination, 0);
+                    const el = document.createElement('div'); el.className = 'card flex flex-col items-center gap-3';
+                    el.onclick = () => window.openAccountOverlay(u.pub);
+                    el.innerHTML = `<div class="p-3 bg-indigo-50 rounded-full text-indigo-600"><i data-lucide="user"></i></div><div class="text-sm font-black">$${bal}</div><div class="text-[9px] mono text-slate-400 font-bold">${u.fp}</div>`;
+                    lGrid.appendChild(el);
+                });
+            }
+
+            const chGrid = document.getElementById('channel-grid'); if(chGrid) {
+                chGrid.innerHTML = '';
+                simulationState.speedyChannels.forEach(c => {
+                    const el = document.createElement('div'); el.className = 'card border-indigo-100 bg-indigo-50/20';
+                    el.onclick = () => window.openChannelOverlay(c.id);
+                    el.innerHTML = `<div class="text-[10px] font-black text-indigo-500 mb-2 uppercase tracking-tighter">SPD CHANNEL ${c.id.slice(0,8)}</div><div class="flex justify-between items-center text-xs">
+                        <div class="text-center font-bold"><div>$${c.participants[0].balance}</div><div class="text-[8px] opacity-40">${c.participants[0].fp}</div></div>
+                        <i data-lucide="zap" class="text-indigo-400" size="14"></i>
+                        <div class="text-center font-bold"><div>$${c.participants[1].balance}</div><div class="text-[8px] opacity-40">${c.participants[1].fp}</div></div>
+                    </div>`;
+                    chGrid.appendChild(el);
+                });
+            }
+            if(window.lucide) lucide.createIcons();
+        };
+
+        // --- Overlays ---
+        window.openNodeOverlay = function(id) {
+            const n = simulationState.nodes.find(x => x.id === id);
+            window.openOverlay(`节点控制台: ${id}`);
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-6 bg-slate-50 border rounded-2xl">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">邻居节点</h4>
+                        <div class="flex flex-wrap gap-1">${n.neighbors.map(nb => `<span class="text-[9px] mono bg-white px-2 py-1 rounded border">${nb}</span>`).join('')}</div>
+                    </div>
+                    <div class="p-6 bg-slate-50 border rounded-2xl">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">广播测试</h4>
+                        <div class="flex gap-2"><input id="br-input" class="flex-1 p-3 rounded-xl border text-xs" placeholder="Hello..."><button onclick="window.broadcastMsg('${id}')" class="bg-indigo-600 text-white px-6 rounded-xl text-xs font-bold uppercase">发送</button></div>
+                    </div>
+                    <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">${n.logs.map(l => `<div class="p-3 border bg-white rounded-xl text-[10px] mono"><b>${l.time}</b>: ${l.text}</div>`).join('') || '空'}</div>
+                </div>
+            `;
+        };
+
+        window.broadcastMsg = (id) => {
+            const msg = document.getElementById('br-input').value; if(!msg) return;
+            const payload = JSON.stringify({ from: id, msg, id: Math.random().toString(36).substr(2, 8) });
+            if(mqttClient) mqttClient.publish(CONFIG.TOPIC_MESH, payload);
+            document.getElementById('br-input').value = '';
+        };
+
+        window.openAccountOverlay = function(pub) {
+            const owned = simulationState.chains.filter(c => c.currentOwner === pub);
+            const isLocal = simulationState.users.some(u => u.pub === pub);
+            window.openOverlay(isLocal ? "本地账户" : "远端账户");
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-10 bg-indigo-600 text-white rounded-[2.5rem] text-center shadow-xl">
+                        <div class="text-[10px] opacity-60 font-black tracking-widest mb-2 uppercase">总余额</div>
+                        <div class="text-6xl font-black">$${owned.filter(c=>c.status==='FREE').reduce((s,c)=>s+c.denomination,0)}</div>
+                        <div class="mt-6 text-[9px] mono opacity-40 break-all select-all font-bold">${pub}</div>
+                    </div>
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">持有资产 (${owned.length})</h4>
+                        <div class="grid grid-cols-2 gap-3">${owned.map(c=>`<div onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 rounded-2xl bg-white shadow-sm flex justify-between items-center cursor-pointer hover:border-indigo-400"><div class="text-lg font-black text-emerald-600">$${c.denomination}</div><div class="text-[8px] font-bold px-2 py-1 rounded ${c.status==='FREE'?'bg-emerald-50 text-emerald-600':'bg-indigo-50 text-indigo-600'}">${c.status}</div></div>`).join('') || '空'}</div>
+                    </div>
+                </div>
+            `;
+        };
+
+        window.openChainOverlay = function(id) {
+            const c = simulationState.chains.find(x => x.genesisId === id);
+            const others = simulationState.users.filter(u => u.pub !== c.currentOwner);
+            window.openOverlay(`区块链溯源: ${id.slice(0,12)}`);
+            const owner = simulationState.users.find(u => u.pub === c.currentOwner);
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-10 bg-emerald-50 border-4 border-emerald-100 rounded-[3rem] text-center">
+                        <div class="text-7xl font-black text-emerald-600">$${c.denomination}</div>
+                        <div class="text-[10px] font-black uppercase text-slate-400 mt-4 tracking-widest">OWNER: ${c.currentOwner.slice(-8)} | ${c.status}</div>
+                    </div>
+                    ${owner && c.status === 'FREE' ? `
+                        <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-5 shadow-lg">
+                            <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">支付资产</h4>
+                            <select id="pay-target" class="w-full bg-slate-50 p-4 rounded-xl text-[10px] mono border-none focus:ring-2 focus:ring-indigo-500 outline-none">
+                                <optgroup label="本地账户">
+                                    ${others.map(u => `<option value="${u.pub}">${u.pub.substring(0,24)}... (FP:${u.fp})</option>`).join('')}
+                                </optgroup>
+                                <optgroup label="外部地址">
+                                    ${simulationState.remoteUsers.map(u => `<option value="${u}">${u.substring(0,24)}...</option>`).join('')}
+                                </optgroup>
+                            </select>
+                            <button onclick="window.execPayment('${id}')" class="w-full bg-indigo-600 text-white py-5 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl">生成支付区块并广播</button>
+                        </div>
+                    ` : `<div class="p-10 bg-slate-100 rounded-[2.5rem] text-center text-xs text-slate-400 italic">${c.status==='MORTGAGED'?'资产已被抵押。':'不持有私钥。'}</div>`}
+                    <div class="space-y-2">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">全区块历史</h4>
+                        <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                            ${c.blocks.map((b,i)=>`<div class="p-4 bg-slate-50 border rounded-2xl text-[9px] mono break-all"><b>#${i} ${b.type}</b><br>Hash: ${b.id}</div>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        window.execPayment = async function(chainId) {
+            const c = simulationState.chains.find(x => x.genesisId === chainId);
+            const target = document.getElementById('pay-target').value;
+            const owner = simulationState.users.find(u => u.pub === c.currentOwner);
+            const data = `PREV:${c.blocks[c.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${target}\nTS:${Date.now()}`;
+            const sig = await signData(data, owner.keyPair.privateKey);
+            const block = { id: sig, type: 'PAYMENT', data, author: c.currentOwner, target, chainRootId: chainId };
+            updateGlobalState(block); if(mqttClient) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            window.openChainOverlay(chainId); window.renderAll();
+        };
+
+        // --- Cascade Payment Revised Flow ---
+        window.openChannelOverlay = function(id) {
+            cascadeSession = { active: false, path: [id], initiatorIdx: 0 };
+            window.refreshChannelUI(id);
+        };
+
+        window.refreshChannelUI = function(id) {
+            const chan = simulationState.speedyChannels.find(x => x.id === id);
+            const p1 = chan.participants[0], p2 = chan.participants[1];
+            const locked = simulationState.chains.filter(c => c.status === 'MORTGAGED' && c.blocks[c.blocks.length-1].target === id);
+            
+            window.openOverlay(`通道面板: ${id.slice(0,12)}`);
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-12 bg-slate-900 rounded-[3.5rem] flex justify-between items-center text-white shadow-2xl relative border-4 border-indigo-900/30">
+                        <div class="text-center flex-1">
+                            <div class="text-5xl font-black">$${p1.balance}</div><div class="text-[9px] mono text-indigo-400 mt-2 uppercase font-bold">${p1.fp}</div>
+                        </div>
+                        <i data-lucide="zap" class="text-indigo-500 animate-pulse mx-4" size="48"></i>
+                        <div class="text-center flex-1">
+                            <div class="text-5xl font-black">$${p2.balance}</div><div class="text-[9px] mono text-indigo-400 mt-2 uppercase font-bold">${p2.fp}</div>
+                        </div>
+                    </div>
+                    <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-6 shadow-lg">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">支付控制</h4>
+                        <div class="flex gap-4">
+                            <select id="ch-sender" class="flex-1 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="0">${p1.fp} 发送至 ${p2.fp}</option>
+                                <option value="1">${p2.fp} 发送至 ${p1.fp}</option>
+                            </select>
+                            <input id="ch-amt" type="number" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none focus:ring-2 focus:ring-indigo-500" value="1">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="window.execChPay('${id}')" class="bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg">单跳直接支付</button>
+                            <button onclick="window.startCascadeMode('${id}')" class="bg-indigo-50 text-indigo-600 py-4 rounded-xl font-black text-[10px] uppercase hover:bg-indigo-100 transition-colors">开启级联构建</button>
+                        </div>
+                    </div>
+                    <div id="cascade-builder" class="${cascadeSession.active ? '' : 'hidden'} p-8 bg-indigo-50/50 rounded-[3rem] space-y-4 border-4 border-white shadow-inner">
+                        <div class="flex justify-between items-center">
+                            <h4 class="text-[11px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-2"><i data-lucide="layers" size="14"></i> 原子级联路径构建</h4>
+                            <button onclick="window.clearCascade('${id}')" class="text-[9px] font-bold text-red-500 hover:underline uppercase">重置路径</button>
+                        </div>
+                        <div id="cascade-steps" class="space-y-2"></div>
+                        <div id="cascade-next" class="pt-4 border-t border-indigo-100"></div>
+                        <button id="cascade-execute" onclick="window.executeCascade()" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl mt-4 active:scale-95 transition-all">执行 ${cascadeSession.path.length} 跳原子结算</button>
+                    </div>
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">抵押钞票</h4>
+                        ${locked.map(c => `<div class="p-5 bg-white border-2 rounded-[2.5rem] shadow-sm flex justify-between items-center transition-all">
+                            <div><div class="text-lg font-black text-emerald-600">$${c.denomination}</div><div class="text-[9px] mono text-slate-400 font-bold">${c.genesisId.slice(0,10)}</div></div>
+                            ${simulationState.users.find(u=>u.pub===c.currentOwner)?`<button onclick="window.execWithdraw('${c.genesisId}','${id}')" class="bg-indigo-600 text-white px-5 py-2 rounded-xl text-[9px] font-black uppercase">提现回赎</button>`:''}
+                        </div>`).join('') || '<div class="text-center italic text-slate-400 text-[10px] py-12">无抵押资产</div>'}
+                    </div>
+                </div>
+            `;
+            if(window.lucide) lucide.createIcons();
+            if(cascadeSession.active) window.updateCascadeList();
+        };
+
+        window.startCascadeMode = (id) => {
+            cascadeSession.active = true;
+            cascadeSession.initiatorIdx = +document.getElementById('ch-sender').value;
+            window.refreshChannelUI(id);
+        };
+
+        window.clearCascade = (id) => {
+            cascadeSession.path = [id];
+            window.updateCascadeList();
+        };
+
+        window.updateCascadeList = () => {
+            const stepsEl = document.getElementById('cascade-steps');
+            const nextEl = document.getElementById('cascade-next');
+            if(!stepsEl) return;
+
+            stepsEl.innerHTML = cascadeSession.path.map((cid, i) => `
+                <div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-indigo-600 text-white w-5 h-5 flex items-center justify-center rounded-full font-black text-[8px]">${i+1}</div>
+                        <div class="font-bold">通道 ${cid.slice(0,12)}...</div>
+                    </div>
+                    <i data-lucide="chevron-down" size="14" class="text-indigo-200"></i>
+                </div>
+            `).join('');
+            
+            // 计算当前路径末端的接收者公钥，用于寻找下一跳
+            let currentReceiverPub;
+            const firstChan = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]);
+            currentReceiverPub = firstChan.participants[cascadeSession.initiatorIdx === 0 ? 1 : 0].pub;
+
+            for(let i = 1; i < cascadeSession.path.length; i++){
+                const c = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[i]);
+                currentReceiverPub = c.participants.find(p => p.pub !== currentReceiverPub).pub;
+            }
+            
+            const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === currentReceiverPub));
+            
+            nextEl.innerHTML = others.map(o => {
+                const partner = o.participants.find(p => p.pub !== currentReceiverPub);
+                return `<button onclick="window.addCascadeHop('${o.id}')" class="w-full bg-white p-4 rounded-2xl text-[10px] text-indigo-700 text-left border-2 border-dashed border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all flex items-center justify-between">
+                    <span>+ 通过通道 ${o.id.slice(0,8)} 继续转发至 <b>${partner.fp}</b></span>
+                    <i data-lucide="plus" size="14"></i>
+                </button>`;
+            }).join('') || '<div class="text-[9px] italic text-slate-400 text-center py-4 bg-slate-100/50 rounded-xl">无法扩展级联路径。</div>';
+            
+            if(window.lucide) lucide.createIcons();
+        };
+
+        window.addCascadeHop = (id) => {
+            cascadeSession.path.push(id);
+            window.updateCascadeList();
+            document.getElementById('cascade-execute').innerText = `执行 ${cascadeSession.path.length} 跳原子结算`;
+        };
+
+        window.executeCascade = () => {
+            const amt = +document.getElementById('ch-amt').value;
+            // 校验路径余额
+            for(let cid of cascadeSession.path) {
+                const c = simulationState.speedyChannels.find(x => x.id === cid);
+                if(c.participants[0].balance < amt && c.participants[1].balance < amt) { 
+                    alert(`级联失败：通道 ${cid.slice(0,8)} 资金不足。`); return; 
                 }
+            }
+            
+            // 执行原子级联结算
+            let currentSenderPub = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]).participants[cascadeSession.initiatorIdx].pub;
+            cascadeSession.path.forEach(cid => {
+                const c = simulationState.speedyChannels.find(x => x.id === cid);
+                const sIdx = c.participants.findIndex(p => p.pub === currentSenderPub);
+                const rIdx = sIdx === 0 ? 1 : 0;
+                c.participants[sIdx].balance -= amt;
+                c.participants[rIdx].balance += amt;
+                currentSenderPub = c.participants[rIdx].pub; // 本跳接收者是下一跳发送者
             });
-            renderAll();
+
+            alert(`【多跳原子支付成功】\n金额: $${amt}\n路径长度: ${cascadeSession.path.length} 跳\n资产已沿构建路径同步完成。`);
+            cascadeSession.active = false;
+            window.refreshChannelUI(cascadeSession.path[0]);
+            window.renderAll();
+        };
+
+        window.execChPay = (id) => {
+            const c = simulationState.speedyChannels.find(x=>x.id===id);
+            const sIdx = +document.getElementById('ch-sender').value;
+            const amt = +document.getElementById('ch-amt').value;
+            if(c.participants[sIdx].balance >= amt) {
+                c.participants[sIdx].balance -= amt; c.participants[sIdx===0?1:0].balance += amt;
+                window.refreshChannelUI(id); window.renderAll();
+            } else alert("余额不足。");
+        };
+
+        window.execWithdraw = async (chainId, chanId) => {
+            const c = simulationState.chains.find(x=>x.genesisId===chainId);
+            const chan = simulationState.speedyChannels.find(x=>x.id===chanId);
+            const part = chan.participants.find(p=>p.pub===c.currentOwner);
+            if(part.balance >= c.denomination) {
+                const owner = simulationState.users.find(u=>u.pub===c.currentOwner);
+                const data = `PREV:${c.blocks[c.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${c.currentOwner}\nTS:${Date.now()}`;
+                const sig = await signData(data, owner.keyPair.privateKey);
+                const block = { id: sig, type: 'PAYMENT', data, author: c.currentOwner, target: c.currentOwner, chainRootId: chainId, fromChannel: chanId };
+                updateGlobalState(block); if(mqttClient) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                window.refreshChannelUI(chanId); window.renderAll();
+            } else alert("余额不足，无法提现。");
+        };
+
+        window.openOverlay = (t) => { document.getElementById('overlay-title').innerText = t; document.getElementById('details-overlay').classList.add('open'); };
+        window.closeOverlay = () => { document.getElementById('details-overlay').classList.remove('open'); window.renderAll(); };
+
+        // --- Crypto Helpers ---
+        async function sha256(m) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m)); return Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, '0')).join(''); }
+        async function generateKeyPair() { const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]); const pub = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("spki", kp.publicKey)))); return { pub, fp: pub.slice(-8).toUpperCase(), keyPair: kp }; }
+        async function signData(d, pk) { const s = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, pk, new TextEncoder().encode(d)); return btoa(String.fromCharCode(...new Uint8Array(s))); }
+
+        // --- Visualization & Steps ---
+        let simulation, svg, g;
+        function initNetworkViz() {
+            svg = d3.select("#network-svg"); if(!svg.node()) return;
+            const w = svg.node().getBoundingClientRect().width, h = svg.node().getBoundingClientRect().height;
+            g = svg.append("g"); svg.call(d3.zoom().scaleExtent([0.1, 5]).on("zoom", (e) => g.attr("transform", e.transform)));
+            simulation = d3.forceSimulation().force("link", d3.forceLink().id(d => d.id).distance(150)).force("charge", d3.forceManyBody().strength(-400)).force("center", d3.forceCenter(w/2, h/2));
+            updateNetworkViz();
         }
-        window.closeOverlay = function() {
-            activeOverlayId = null; 
-            document.getElementById('overlay').classList.add('opacity-0', 'pointer-events-none'); 
-            document.getElementById('overlay-content').classList.add('translate-x-full');
-            renderAll();
-        };
-        window.openOverlay = function(title) {
-            document.getElementById('overlay-title').innerText = title;
-            document.getElementById('overlay').classList.remove('opacity-0', 'pointer-events-none');
-            document.getElementById('overlay-content').classList.remove('translate-x-full');
-        };
+        function updateNetworkViz() {
+            if(!g) return;
+            const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
+            const links = []; simulationState.nodes.forEach(n => n.neighbors.forEach(nb => { if (n.id < nb) links.push({ source: n.id, target: nb }); }));
+            g.selectAll("*").remove();
+            const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
+            const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 12).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node shadow-lg").on("click", (e, d) => window.openNodeOverlay(d.id));
+            simulation.nodes(nodes); simulation.force("link").links(links); simulation.alpha(1).restart();
+            simulation.on("tick", () => { link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y); node.attr("cx", d => d.x).attr("cy", d => d.y); });
+        }
+
+        function updateStepUI() {
+            ['btn-init-net', 'btn-init-accounts', 'btn-init-assets', 'btn-init-channels'].forEach((id, i) => {
+                const b = document.getElementById(id); if(!b) return;
+                b.style.display = i < simulationState.step ? 'none' : 'flex'; b.disabled = i !== simulationState.step;
+                if(i === simulationState.step) { b.classList.add('btn-active'); b.classList.remove('btn-inactive'); } else { b.classList.remove('btn-active'); b.classList.add('btn-inactive'); }
+            });
+            window.renderAll();
+        }
+
+        try {
+            mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { clientId: 'aob_v25_final_rev_' + appInstanceId, clean: true });
+            mqttClient.on('connect', () => {
+                mqttClient.subscribe(CONFIG.TOPIC_MESH); mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY);
+                document.getElementById('mqtt-status').innerText = "Broker: Online";
+            });
+            mqttClient.on('message', (t, p) => {
+                try {
+                    const d = JSON.parse(p.toString());
+                    if (t === CONFIG.TOPIC_DISCOVERY) {
+                        if (d.instance === appInstanceId) return;
+                        discoveryBuffer.set(d.id, d.instance);
+                        if (simulationState.step >= 1) {
+                            let rNode = simulationState.nodes.find(x => x.id === d.id);
+                            if (!rNode) { 
+                                rNode = { id: d.id, instance: d.instance, neighbors: [], logs: [], seenIds: new Set() }; 
+                                simulationState.nodes.push(rNode); 
+                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 7);
+                                if (locals.length > 0) {
+                                    locals.sort(() => Math.random() - 0.5).slice(0, 2).forEach(ln => {
+                                        if(!ln.neighbors.includes(d.id)) { ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); }
+                                    });
+                                }
+                                if (simulation) updateNetworkViz();
+                            }
+                        }
+                    } else if (t === CONFIG.TOPIC_MESH) { 
+                        if (d.block) updateGlobalState(d.block); 
+                        if (d.msg) {
+                            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
+                                if(!n.seenIds.has(d.id)) {
+                                    n.seenIds.add(d.id); n.logs.unshift({ time: new Date().toLocaleTimeString(), text: `消息广播: ${d.msg}` });
+                                }
+                            });
+                        }
+                        window.renderAll(); 
+                    }
+                } catch (e) {}
+            });
+        } catch (e) {}
+
+        document.addEventListener('DOMContentLoaded', updateStepUI);
     </script>
 </body>
 </html>
