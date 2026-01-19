@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic Ownership Lab - AOB 仿真实验室 (Backup)</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.run/@google/genai"
+      }
+    }
+    </script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style type="text/tailwindcss">
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow: hidden; height: 100vh; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        .tab-content { display: none; height: calc(100vh - 280px); }
+        .tab-content.active { display: flex; flex-direction: column; }
+        
+        .fixed-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .fixed-overlay.open { opacity: 100; pointer-events: auto; }
+
+        #details-overlay { z-index: 100; justify-content: flex-end; }
+        #details-content {
+            width: 100%; max-width: 550px; height: 100%;
+            background: white;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex; flex-direction: column;
+        }
+        #details-overlay.open #details-content { transform: translateX(0); }
+
+        .btn-box { @apply px-6 py-3 rounded-xl text-sm font-extrabold flex items-center gap-2 transition-all uppercase tracking-wider border-2 border-transparent; }
+        .btn-active { @apply bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-95 cursor-pointer; }
+        .btn-inactive { @apply bg-slate-100 text-slate-400 cursor-not-allowed opacity-50; }
+        
+        .tab-btn { @apply py-4 text-sm font-bold border-b-4 border-transparent text-slate-400 transition-all hover:text-slate-600; }
+        .tab-btn.active { @apply border-indigo-600 text-indigo-600 !important; }
+
+        .card { @apply bg-white border-2 border-slate-200 rounded-2xl p-4 transition-all hover:shadow-lg active:scale-[0.98] w-48 flex-shrink-0 cursor-pointer relative; }
+        
+        /* 区块链三种状态区分 - 本地：蓝，远端：黄，抵押：灰 */
+        .chain-local { @apply border-blue-500 bg-blue-50/50 shadow-md ring-4 ring-blue-100; }
+        .chain-local .chain-val { @apply text-blue-700; }
+        
+        .chain-remote { @apply border-amber-500 bg-amber-50 shadow-md ring-4 ring-amber-100; }
+        .chain-remote .chain-val { @apply text-amber-700; }
+        
+        .chain-mortgaged { @apply border-slate-400 border-dashed bg-slate-100 opacity-60 grayscale; }
+        .chain-mortgaged .chain-val { @apply text-slate-500; }
+
+        #network-svg { width: 100%; height: 100%; background: #fff; }
+        .node { stroke: #fff; stroke-width: 3px; cursor: pointer; }
+        .link { stroke: #cbd5e1; stroke-opacity: 0.6; stroke-width: 1.5px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <div class="p-4 bg-red-500 text-white text-center font-black">BACKUP COPY - READ ONLY</div>
+    <!-- (Original index.html content follows...) -->
+</body>
+</html>
