@@ -65,7 +65,10 @@
             <div class="space-y-2">
                 <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership Research Lab</p>
                 <h1 class="text-3xl font-black text-slate-900 tracking-tighter">AOB 仿真实验室</h1>
-                <div id="status-history" class="text-sm text-slate-500 font-medium leading-relaxed">原子所有权 P2P 仿真环境。跨实例实时同步中。</div>
+                <div id="status-line" class="text-sm text-slate-500 font-bold leading-relaxed flex items-center gap-3">
+                    <span>原子所有权 P2P 仿真环境。</span>
+                    <div id="readiness-badges" class="flex gap-2"></div>
+                </div>
             </div>
             <div id="mqtt-status" class="px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100">Broker: Connecting...</div>
         </div>
@@ -127,7 +130,8 @@
             chains: [], speedyChannels: [], step: 0,
             processedIds: new Set(),
             pendingMortgages: [],
-            activeAmount: 10 
+            activeAmount: 10,
+            readyFlags: []
         };
 
         const CONFIG = {
@@ -159,6 +163,7 @@
                     mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: rNode.id, instance: appInstanceId }));
                 }
             }, 3000);
+            simulationState.readyFlags.push("网络就绪");
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
         };
 
@@ -166,7 +171,6 @@
             superUser = await generateKeyPair(); simulationState.superUser = superUser;
             for (let i = 0; i < CONFIG.ACCOUNT_COUNT; i++) {
                 const kp = await generateKeyPair(); 
-                // 确保 1:3 映射关系：每个账户绑定三个唯一本地节点
                 kp.nodes = [
                     `NODE-${appInstanceId}-${i * 3}`,
                     `NODE-${appInstanceId}-${i * 3 + 1}`,
@@ -174,13 +178,14 @@
                 ];
                 simulationState.users.push(kp);
             }
+            simulationState.readyFlags.push("用户账户就绪");
             simulationState.step = 2; updateStepUI(); window.switchTab('accounts');
         };
 
         window.initBanknotes = async function() {
-            const h = await sha256("AOB Definition Standard Document V1");
+            const h = await getHash("AOB Definition Standard Document V1");
             for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                const gData = `${h}\n${s}\n${superUser.pub}`; const gId = await sha256(gData);
+                const gData = `${h}\n${s}\n${superUser.pub}`; const gId = await getHash(gData);
                 const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
                 const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
                 const payData = `PREV:${gId}\nTYPE:PAYMENT\nTARGET:${target.pub}\nTS:${Date.now()}`;
@@ -192,6 +197,7 @@
                     mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
                 }
             }
+            simulationState.readyFlags.push("钞票就绪");
             simulationState.step = 3; updateStepUI(); window.switchTab('chains');
         };
 
@@ -228,13 +234,14 @@
                     attempts++;
                 }
             }
+            simulationState.readyFlags.push("快速通道就绪");
             simulationState.step = 4; updateStepUI(); window.switchTab('channels');
         };
 
         async function createAndBroadcastChannel(u1, u2) {
             const sorted = [u1.pub, u2.pub].sort();
             const rootData = `Speedy Channel\n${Date.now()}\n${sorted[0]}\n${u1.nodes?u1.nodes[0]:'EXT'}\n${sorted[1]}\n${u2.nodes?u2.nodes[0]:'EXT'}`;
-            const cId = await sha256(rootData);
+            const cId = await getHash(rootData); 
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
                 updateGlobalState(block);
@@ -243,7 +250,6 @@
                 [u1, u2].forEach(async u => {
                     const localUser = simulationState.users.find(lu => lu.pub === u.pub);
                     if (localUser && localUser.keyPair) {
-                        // 抵押优化：优先选择面值大的钞票
                         const chains = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE')
                                          .sort((a, b) => b.denomination - a.denomination);
                         const chain = chains[0];
@@ -282,6 +288,14 @@
                 c = { serial: s, denomination: d, genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
                 simulationState.chains.push(c);
             } else if (c) {
+                if (block.type === 'PAYMENT' && c.status === 'MORTGAGED') {
+                    const chan = simulationState.speedyChannels.find(x => x.id === c.currentOwner);
+                    if (chan) {
+                        const p = chan.participants.find(p => p.pub === block.author);
+                        if (p) p.balance -= c.denomination;
+                    }
+                }
+
                 c.blocks.push(block);
                 if (block.type === 'PAYMENT') { c.currentOwner = block.target; c.status = 'FREE'; }
                 else if (block.type === 'MORTGAGE') {
@@ -290,8 +304,9 @@
                     if(ch) {
                         const p = ch.participants.find(p=>p.pub===block.author);
                         if(p) p.balance += c.denomination;
+                        c.currentOwner = block.target;
                     } else {
-                        simulationState.pendingMortgages.push({ target: block.target, author: block.author, value: c.denomination });
+                        simulationState.pendingMortgages.push({ target: block.target, author: block.author, value: c.denomination, genesisId: c.genesisId });
                     }
                 }
             }
@@ -301,13 +316,15 @@
                 const chan = { 
                     id: block.id, 
                     participants: [{pub:l[2], fp:l[2].slice(0,8), balance:0}, {pub:l[4], fp:l[4].slice(0,8), balance:0}],
-                    history: [] // 初始化历史记录
+                    history: [] 
                 };
                 simulationState.speedyChannels.push(chan);
                 simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
                     if (pm.target === block.id) {
                         const p = chan.participants.find(p => p.pub === pm.author);
                         if (p) p.balance += pm.value;
+                        const chain = simulationState.chains.find(x => x.genesisId === pm.genesisId);
+                        if (chain) chain.currentOwner = block.id;
                         return false;
                     }
                     return true;
@@ -320,9 +337,7 @@
         function simulateFlood(originNodeId, content, type = 'TEST_MSG') {
             const mId = Math.random().toString(36).substr(2, 9);
             const msg = { mId, originator: originNodeId, fromNode: originNodeId, content, type, hop: 0, ts: Date.now() };
-            if (mqttClient && mqttClient.connected) {
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: msg }));
-            }
+            if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: msg }));
         }
 
         function handleIncomingRelay(msg) {
@@ -331,9 +346,7 @@
                     if (n.neighbors.includes(msg.fromNode) || msg.originator === msg.fromNode) {
                         n.seenIds.add(msg.mId);
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: `[P2P] ${msg.content}` });
-                        if (msg.hop < 4) {
-                            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
-                        }
+                        if (msg.hop < 4) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
                     }
                 }
             });
@@ -405,6 +418,12 @@
                 });
             }
             if(window.lucide) lucide.createIcons();
+            
+            // 刷新就绪状态栏
+            const badgeContainer = document.getElementById('readiness-badges');
+            if (badgeContainer) {
+                badgeContainer.innerHTML = simulationState.readyFlags.map(f => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] uppercase font-black tracking-widest">${f}</span>`).join(' · ');
+            }
         };
 
         window.openNodeOverlay = function(id) {
@@ -517,6 +536,8 @@
             const p1 = chan.participants[0], p2 = chan.participants[1];
             const isP1Local = simulationState.users.some(u => u.pub === p1.pub);
             const isP2Local = simulationState.users.some(u => u.pub === p2.pub);
+            const mortgagedBanknotes = simulationState.chains.filter(c => c.currentOwner === id && c.status === 'MORTGAGED');
+
             window.openOverlay(`Speedy Channel 面板`);
             document.getElementById('overlay-body').innerHTML = `
                 <div class="space-y-6 pb-20">
@@ -547,6 +568,21 @@
                     </div>
 
                     <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">通道中抵押的区块链钞票</h4>
+                        <div class="space-y-2">
+                            ${mortgagedBanknotes.map(c => `
+                                <div class="p-4 bg-white border-2 border-slate-100 rounded-2xl flex justify-between items-center shadow-sm">
+                                    <div class="flex flex-col">
+                                        <div class="text-sm font-black text-slate-700">$${c.denomination}</div>
+                                        <div class="text-[8px] mono text-slate-400 font-bold uppercase">ID: ${c.genesisId.slice(0,12)}...</div>
+                                    </div>
+                                    <button onclick="window.execWithdraw('${c.genesisId}', '${id}')" class="bg-indigo-100 text-indigo-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-indigo-200 transition-colors">提现</button>
+                                </div>
+                            `).join('') || '<div class="text-xs text-slate-300 italic text-center py-6">当前无抵押资产</div>'}
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
                         <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">通道支付记录</h4>
                         <div class="space-y-2">
                             ${(chan.history || []).map(h => `
@@ -570,96 +606,86 @@
             if(cascadeSession.active) window.updateCascadeList();
         };
 
+        window.execWithdraw = async function(genesisId, channelId) {
+            const c = simulationState.chains.find(x => x.genesisId === genesisId);
+            const chan = simulationState.speedyChannels.find(x => x.id === channelId);
+            const localParticipant = chan.participants.find(p => simulationState.users.some(u => u.pub === p.pub));
+            if (!localParticipant) { alert("无本地参与者，无法执行提现。"); return; }
+            if (localParticipant.balance < c.denomination) { alert(`余额不足，无法提取 $${c.denomination}（余额 $${localParticipant.balance}）。`); return; }
+
+            const localUser = simulationState.users.find(u => u.pub === localParticipant.pub);
+            const data = `PREV:${c.blocks[c.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${localParticipant.pub}\nTS:${Date.now()}`;
+            const sig = await signData(data, localUser.keyPair.privateKey);
+            const block = { id: sig, type: 'PAYMENT', data, author: localParticipant.pub, target: localParticipant.pub, chainRootId: genesisId };
+            
+            updateGlobalState(block);
+            if(mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            alert(`提现成功。`); window.refreshChannelUI(channelId);
+        };
+
         window.startCascadeMode = (id) => { cascadeSession.active = true; cascadeSession.initiatorIdx = +document.getElementById('ch-sender').value; cascadeSession.path = [id]; window.refreshChannelUI(id); };
         window.updateCascadeList = () => {
             const stepsEl = document.getElementById('cascade-steps');
             const nextEl = document.getElementById('cascade-next');
             if(!stepsEl) return;
-            stepsEl.innerHTML = cascadeSession.path.map((cid, i) => `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex items-center gap-3 shadow-sm"><b>Hop #${i+1}: ${cid.slice(0,8)}...</b></div>`).join('');
             
-            let curPub = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]).participants[cascadeSession.initiatorIdx === 0 ? 1 : 0].pub;
-            for(let i = 1; i < cascadeSession.path.length; i++) {
-                const c = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[i]);
-                curPub = c.participants.find(p => p.pub !== curPub).pub;
-            }
-            
-            const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === curPub));
-            nextEl.innerHTML = others.map(o => {
-                const partner = o.participants.find(p => p.pub !== curPub);
-                const selfBal = o.participants.find(p => p.pub === curPub).balance;
-                const partnerBal = partner.balance;
-                return `
-                    <button onclick="window.addCascadeHop('${o.id}')" class="w-full bg-white p-4 rounded-2xl text-[10px] text-indigo-700 text-left border-2 border-dashed border-indigo-200 hover:border-indigo-400 flex justify-between items-center transition-all">
-                        <div class="flex justify-between items-center w-full">
-                            <div class="space-y-1">
-                                <span class="font-black">转发至 ${partner.fp}</span>
-                                <div class="text-[8px] opacity-60">当前余额: ${selfBal} -> ${partnerBal}</div>
-                            </div>
-                            <i data-lucide="plus" size="14"></i>
+            let currentPathPub = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]).participants[cascadeSession.initiatorIdx].pub;
+            stepsEl.innerHTML = cascadeSession.path.map((cid, i) => {
+                const chan = simulationState.speedyChannels.find(x => x.id === cid);
+                const sender = chan.participants.find(p => p.pub === currentPathPub);
+                const receiver = chan.participants.find(p => p.pub !== currentPathPub);
+                const html = `
+                    <div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm">
+                        <div class="flex justify-between font-black text-indigo-600 uppercase">
+                            <span>Hop #${i+1}</span>
+                            <span class="mono">ID: ${cid.slice(0,8)}...</span>
                         </div>
-                    </button>`;
-            }).join('') || '<div class="text-xs italic text-slate-400 text-center py-4 bg-slate-100/50 rounded-xl">无更多下游通道。</div>';
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="mono px-2 py-0.5 bg-indigo-50 rounded text-slate-700 font-bold">${sender.fp}</span>
+                            <i data-lucide="arrow-right" size="10" class="text-slate-300"></i>
+                            <span class="mono px-2 py-0.5 bg-emerald-50 rounded text-slate-700 font-bold">${receiver.fp}</span>
+                        </div>
+                    </div>`;
+                currentPathPub = receiver.pub; 
+                return html;
+            }).join('');
+            
+            const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === currentPathPub));
+            nextEl.innerHTML = others.map(o => {
+                const partner = o.participants.find(p => p.pub !== currentPathPub);
+                const selfBal = o.participants.find(p => p.pub === currentPathPub).balance;
+                return `<button onclick="window.addCascadeHop('${o.id}')" class="w-full bg-white p-4 rounded-2xl text-[10px] text-indigo-700 text-left border-2 border-dashed border-indigo-200 hover:border-indigo-400 flex justify-between items-center transition-all"><div class="flex justify-between items-center w-full"><div class="space-y-1"><span class="font-black">转发至 ${partner.fp}</span><div class="text-[8px] opacity-60">余额: ${selfBal} -> ${partner.balance}</div></div><i data-lucide="plus" size="14"></i></div></button>`;
+            }).join('') || '<div class="text-xs italic text-slate-400 text-center py-4">无更多下游通道。</div>';
             if(window.lucide) lucide.createIcons();
         };
         window.addCascadeHop = (id) => { cascadeSession.path.push(id); window.updateCascadeList(); };
         
         window.executeCascade = () => {
             const amt = Number(simulationState.activeAmount);
-            if (isNaN(amt) || amt <= 0) { alert("请输入有效金额。"); return; }
-            
+            if (isNaN(amt) || amt <= 0) { alert("金额无效。"); return; }
             let currentPathPub = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]).participants[cascadeSession.initiatorIdx].pub;
             for(const cid of cascadeSession.path) {
                 const c = simulationState.speedyChannels.find(x => x.id === cid);
                 const sIdx = c.participants.findIndex(p => p.pub === currentPathPub);
-                if (c.participants[sIdx].balance < amt) {
-                    alert(`原子路径中断：中间通道 ${cid.slice(0,8)} 余额不足（当前 $${c.participants[sIdx].balance}，需求 $${amt}）。`);
-                    return;
-                }
-                const rIdx = sIdx === 0 ? 1 : 0;
-                currentPathPub = c.participants[rIdx].pub;
+                if (c.participants[sIdx].balance < amt) { alert(`通道 ${cid.slice(0,8)} 余额不足。`); return; }
+                currentPathPub = c.participants[sIdx === 0 ? 1 : 0].pub;
             }
-
             currentPathPub = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]).participants[cascadeSession.initiatorIdx].pub;
             cascadeSession.path.forEach(cid => {
                 const c = simulationState.speedyChannels.find(x => x.id === cid);
-                const sIdx = c.participants.findIndex(p => p.pub === currentPathPub);
-                const rIdx = sIdx === 0 ? 1 : 0;
-                
-                if(mqttClient && mqttClient.connected) {
-                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({
-                        type: 'SPEEDY_CHANNEL_UPDATE',
-                        msgId: Math.random().toString(36).substr(2, 9),
-                        channelId: cid,
-                        senderPub: currentPathPub,
-                        senderInstance: appInstanceId,
-                        amount: amt
-                    }));
-                }
-                currentPathPub = c.participants[rIdx].pub;
+                if(mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: Math.random().toString(36).substr(2, 9), channelId: cid, senderPub: currentPathPub, senderInstance: appInstanceId, amount: amt }));
+                currentPathPub = c.participants.find(p => p.pub !== currentPathPub).pub;
             });
-            
-            alert(`原子级联支付（共 $${amt}）已全路径分发同步。`);
-            cascadeSession.active = false; window.closeOverlay();
+            alert(`原子级联同步完成。`); cascadeSession.active = false; window.closeOverlay();
         };
 
         window.execChPay = (id) => {
             const c = simulationState.speedyChannels.find(x=>x.id===id);
             const sIdx = +document.getElementById('ch-sender').value;
             const amt = Number(simulationState.activeAmount);
-            
-            if (isNaN(amt) || amt <= 0) { alert("请输入有效金额。"); return; }
+            if (isNaN(amt) || amt <= 0) return;
             if(c.participants[sIdx].balance >= amt) {
-                const senderPub = c.participants[sIdx].pub;
-                if(mqttClient && mqttClient.connected) {
-                    mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({
-                        type: 'SPEEDY_CHANNEL_UPDATE',
-                        msgId: Math.random().toString(36).substr(2, 9),
-                        channelId: id,
-                        senderPub: senderPub,
-                        senderInstance: appInstanceId,
-                        amount: amt
-                    }));
-                }
+                if(mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: Math.random().toString(36).substr(2, 9), channelId: id, senderPub: c.participants[sIdx].pub, senderInstance: appInstanceId, amount: amt }));
             } else alert("余额不足。");
         };
 
@@ -687,8 +713,18 @@
 
         window.openOverlay = (t) => { document.getElementById('overlay-title').innerText = t; document.getElementById('details-overlay').classList.add('open'); };
         window.closeOverlay = () => { currentOpenedChannelId = null; document.getElementById('details-overlay').classList.remove('open'); window.renderAll(); };
-        async function sha256(m) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m)); return Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, '0')).join(''); }
-        async function generateKeyPair() { const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]); const rawPub = await crypto.subtle.exportKey("raw", kp.publicKey); const pub = btoa(String.fromCharCode(...new Uint8Array(rawPub))); return { pub, fp: pub.slice(0, 8), keyPair: kp }; }
+        
+        async function getHash(text) {
+            const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+            return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
+        }
+        
+        async function generateKeyPair() { 
+            const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]); 
+            const rawPub = await crypto.subtle.exportKey("raw", kp.publicKey); 
+            const pub = btoa(String.fromCharCode(...new Uint8Array(rawPub))); 
+            return { pub, fp: pub.slice(0, 8), keyPair: kp }; 
+        }
         async function signData(d, pk) { const s = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, pk, new TextEncoder().encode(d)); return btoa(String.fromCharCode(...new Uint8Array(s))); }
 
         // --- Visualizer ---
@@ -704,7 +740,7 @@
             if(!g) return;
             const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
             const links = []; 
-            simulationState.nodes.forEach(n => { n.neighbors.forEach(nbid => { if (n.id < nbid && simulationState.nodes.some(x => x.id === nbid)) { links.push({ source: n.id, target: nbid }); } }); });
+            simulationState.nodes.forEach(n => { n.neighbors.forEach(nbid => { if (n.id < nbid && simulationState.nodes.some(x => x.id === nbid)) links.push({ source: n.id, target: nbid }); }); });
             g.selectAll("*").remove();
             const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
             const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 12).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node shadow-lg").on("click", (e, d) => window.openNodeOverlay(d.id));
@@ -712,15 +748,31 @@
             simulation.on("tick", () => { link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y); node.attr("cx", d => d.x).attr("cy", d => d.y); });
         }
         function updateStepUI() {
-            ['btn-init-net', 'btn-init-accounts', 'btn-init-assets', 'btn-init-channels'].forEach((id, i) => {
-                const b = document.getElementById(id); if(!b) return;
-                b.style.display = i < simulationState.step ? 'none' : 'flex'; b.disabled = i !== simulationState.step;
-                if(i === simulationState.step) { b.classList.add('btn-active'); b.classList.remove('btn-inactive'); } else { b.classList.remove('btn-active'); b.classList.add('btn-inactive'); }
+            const steps = [
+                { id: 'btn-init-net', index: 0 },
+                { id: 'btn-init-accounts', index: 1 },
+                { id: 'btn-init-assets', index: 2 },
+                { id: 'btn-init-channels', index: 3 }
+            ];
+            steps.forEach(s => {
+                const btn = document.getElementById(s.id);
+                if (!btn) return;
+                if (simulationState.step > s.index) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = 'flex';
+                    btn.disabled = simulationState.step !== s.index;
+                    if (simulationState.step === s.index) {
+                        btn.classList.add('btn-active'); btn.classList.remove('btn-inactive');
+                    } else {
+                        btn.classList.remove('btn-active'); btn.classList.add('btn-inactive');
+                    }
+                }
             });
             window.renderAll();
         }
 
-        // --- MQTT Discovery & Sync ---
+        // --- MQTT ---
         try {
             mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { clientId: 'aob_v25_' + appInstanceId, clean: true });
             mqttClient.on('connect', () => { 
@@ -728,8 +780,7 @@
                 mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY); 
                 const statusEl = document.getElementById('mqtt-status');
                 statusEl.innerText = "Broker: Online"; 
-                statusEl.classList.remove('bg-amber-50', 'text-amber-600', 'border-amber-100');
-                statusEl.classList.add('bg-green-50', 'text-green-600', 'border-green-100');
+                statusEl.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
             });
             mqttClient.on('message', (t, p) => {
                 try {
@@ -741,15 +792,7 @@
                             rNode = { id: d.id, instance: d.instance, neighbors: [], logs: [], seenIds: new Set() };
                             simulationState.nodes.push(rNode);
                             const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 7);
-                            if(locals.length > 0) {
-                                locals.sort(() => Math.random() - 0.5).slice(0, 2).forEach(ln => { 
-                                    if(!ln.neighbors.includes(d.id)) { ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); } 
-                                });
-                            }
-                            if(d.type === 'HELLO') {
-                                const myNode = simulationState.nodes.find(n => n.instance === appInstanceId);
-                                if(myNode) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: myNode.id, instance: appInstanceId }));
-                            }
+                            if(locals.length > 0) locals.sort(() => Math.random() - 0.5).slice(0, 2).forEach(ln => { if(!ln.neighbors.includes(d.id)) { ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); } });
                             if(simulation) updateNetworkViz();
                         }
                     } else if (t === CONFIG.TOPIC_MESH) {
@@ -758,7 +801,6 @@
                         else if (d.type === 'SPEEDY_CHANNEL_UPDATE') {
                             if(simulationState.processedIds.has(d.msgId)) return;
                             simulationState.processedIds.add(d.msgId);
-
                             const c = simulationState.speedyChannels.find(x => x.id === d.channelId);
                             if (c) {
                                 const sIdx = c.participants.findIndex(p => p.pub === d.senderPub);
@@ -767,30 +809,13 @@
                                     const amount = Number(d.amount); 
                                     c.participants[sIdx].balance -= amount;
                                     c.participants[rIdx].balance += amount;
-                                    
-                                    // 添加历史记录
                                     if(!c.history) c.history = [];
-                                    c.history.push({
-                                        time: new Date().toLocaleTimeString(),
-                                        senderFp: c.participants[sIdx].fp,
-                                        receiverFp: c.participants[rIdx].fp,
-                                        amount: amount
-                                    });
-                                    if(c.history.length > 50) c.history.shift();
+                                    c.history.push({ time: new Date().toLocaleTimeString(), senderFp: c.participants[sIdx].fp, receiverFp: c.participants[rIdx].fp, amount: amount });
                                 }
-                                
                                 window.renderAll();
-                                
-                                if(currentOpenedChannelId) {
-                                    if (currentOpenedChannelId === d.channelId) {
-                                        window.refreshChannelUI(currentOpenedChannelId);
-                                    } else if (cascadeSession && cascadeSession.active && cascadeSession.path && cascadeSession.path.includes(d.channelId)) {
-                                        window.refreshChannelUI(cascadeSession.path[0]);
-                                    }
-                                }
+                                if(currentOpenedChannelId && (currentOpenedChannelId === d.channelId || (cascadeSession.active && cascadeSession.path.includes(d.channelId)))) window.refreshChannelUI(cascadeSession.active ? cascadeSession.path[0] : currentOpenedChannelId);
                             }
                         }
-                        window.renderAll();
                     }
                 } catch (e) {}
             });
