@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Cryptocurrency Demo</title>
+    <title>Advanced Cryptocurrency Demo - Atomic Ownership Blockchains Lab</title>
     <script type="importmap">
     {
       "imports": {
@@ -11,6 +11,7 @@
       }
     }
     </script>
+    <!-- Core libraries for P2P networking, UI styling, icons, and graph visualization -->
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -27,11 +28,12 @@
         .tab-content { display: none; height: calc(100vh - 280px); }
         .tab-content.active { display: flex; flex-direction: column; }
         
+        /* Fixed overlay for details and AI chat */
         .fixed-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 100; }
         .fixed-overlay.open { opacity: 1; pointer-events: auto; }
-        #details-overlay { justify-content: flex-end; }
-        #details-content { width: 100%; max-width: 550px; height: 100%; background: white; box-shadow: -10px 0 30px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
-        #details-overlay.open #details-content { transform: translateX(0); }
+        #details-overlay, #ai-overlay { justify-content: flex-end; }
+        #details-content, #ai-content { width: 100%; max-width: 550px; height: 100%; background: white; box-shadow: -10px 0 30px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
+        #details-overlay.open #details-content, #ai-overlay.open #ai-content { transform: translateX(0); }
 
         .btn-box { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; border: 2px solid transparent; }
         .btn-active { background-color: #4f46e5; color: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); cursor: pointer; }
@@ -43,6 +45,7 @@
         .card { background-color: white; border: 2px solid #e2e8f0; border-radius: 1rem; padding: 1rem; transition: all 0.2s; width: 12rem; flex-shrink: 0; cursor: pointer; position: relative; }
         .card:hover { border-color: #4f46e5; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
 
+        /* Block status colors */
         .chain-local { border-color: #3b82f6 !important; background-color: #eff6ff !important; }
         .chain-remote { border-color: #f59e0b !important; background-color: #fffbeb !important; }
         .chain-mortgaged { border-color: #94a3b8 !important; border-style: dashed !important; opacity: 0.6; filter: grayscale(1); }
@@ -56,6 +59,13 @@
         .chan-remote { border-color: #f59e0b !important; background-color: #fffbeb !important; }
         
         .participant-local { background-color: #4f46e5; color: white; padding: 0.1rem 0.3rem; border-radius: 0.25rem; }
+
+        /* AI Message Styles */
+        .ai-message { border-radius: 1rem; padding: 1rem; margin-bottom: 1rem; max-width: 90%; line-height: 1.6; }
+        .ai-msg-user { align-self: flex-end; background-color: #4f46e5; color: white; font-weight: 600; }
+        .ai-msg-bot { align-self: flex-start; background-color: #f1f5f9; color: #1e293b; border: 1px solid #e2e8f0; font-weight: 500; }
+        .help-q-mark { color: #94a3b8; cursor: pointer; transition: color 0.2s; display: inline-flex; align-items: center; justify-content: center; }
+        .help-q-mark:hover { color: #4f46e5; transform: scale(1.1); }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -64,7 +74,10 @@
         <div class="max-w-7xl mx-auto flex justify-between items-start">
             <div class="space-y-2">
                 <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership TestNet</p>
-                <h1 id="main-title" class="text-3xl font-black text-slate-900 tracking-tighter">先进加密货币示范网</h1>
+                <h1 id="main-title" class="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-2">
+                    先进加密货币示范网
+                    <button onclick="window.askAI('intro')" class="help-q-mark"><i data-lucide="help-circle" size="20"></i></button>
+                </h1>
                 <div id="status-line" class="text-sm text-slate-500 font-bold leading-relaxed flex flex-wrap items-center gap-3">
                     <span id="instruction-text"></span>
                     <div id="readiness-badges" class="flex flex-wrap gap-2"></div>
@@ -72,9 +85,14 @@
             </div>
             <div class="flex flex-col items-end gap-3">
                 <div id="mqtt-status" class="px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100">Broker: Connecting...</div>
-                <button onclick="window.toggleLanguage()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black rounded-full uppercase transition-colors">
-                    <span id="lang-toggle-text">English</span>
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="window.toggleLanguage()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black rounded-full uppercase transition-colors">
+                        <span id="lang-toggle-text">English</span>
+                    </button>
+                    <button onclick="window.askAI('help')" class="w-8 h-8 flex items-center justify-center bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-colors shadow-lg">
+                        <i data-lucide="sparkles" size="16"></i>
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -116,7 +134,7 @@
 
     <div id="details-overlay" class="fixed-overlay" onclick="if(event.target==this) window.closeOverlay()">
         <div id="details-content" onclick="event.stopPropagation()">
-            <div class="p-10 border-b border-slate-100 flex justify-between items-center">
+            <div class="p-10 border-b border-slate-100 flex justify-between items-center bg-white/50 backdrop-blur">
                 <h2 id="overlay-title" class="text-2xl font-black text-slate-900 uppercase">详情</h2>
                 <button onclick="window.closeOverlay()" class="p-3 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
             </div>
@@ -124,7 +142,234 @@
         </div>
     </div>
 
-    <script>
+    <!-- AI Chat Overlay -->
+    <div id="ai-overlay" class="fixed-overlay" onclick="if(event.target==this) window.closeAI()">
+        <div id="ai-content" onclick="event.stopPropagation()">
+            <div class="p-10 border-b border-slate-100 flex justify-between items-center bg-indigo-50/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg">
+                        <i data-lucide="sparkles" size="20"></i>
+                    </div>
+                    <div>
+                        <h2 id="ai-header-title" class="text-xl font-black text-slate-900 uppercase tracking-tighter">AOB AI Assistant</h2>
+                        <p id="ai-header-status" class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Always Online</p>
+                    </div>
+                </div>
+                <button onclick="window.closeAI()" class="p-3 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div id="ai-messages" class="flex-1 overflow-y-auto custom-scrollbar p-10 flex flex-col space-y-4">
+                <!-- AI messages here -->
+            </div>
+            <div class="p-6 border-t border-slate-100 bg-white">
+                <div class="flex gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200 ring-1 ring-white shadow-inner">
+                    <input id="ai-input" type="text" placeholder="..." class="flex-1 bg-transparent px-4 py-3 text-sm font-bold outline-none" onkeypress="if(event.key==='Enter') window.sendAIMessage()">
+                    <button onclick="window.sendAIMessage()" class="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition-colors shadow-md active:scale-95">
+                        <i data-lucide="send" size="18"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { GoogleGenAI } from "@google/genai";
+
+        /**
+         * AI Help Prompts localized for UI Language.
+         * Used when clicking help icons (question marks).
+         */
+        const AI_HELP_PROMPTS = {
+            zh: {
+                'intro': '请向我介绍一下 AOB 技术和这个模拟器的功能。',
+                'help': '我该如何操作？下一步该点哪里？',
+                'init_net': '如何建立网络？AOB协议的网络层是如何工作的？',
+                'init_accounts': '如何创建用户账户？AOB中的账户和节点是什么关系？',
+                'init_assets': '什么是区块链钞票？AOB是如何实现原子所有权的？',
+                'init_channels': '什么是快速通道（Speedy Channel）？它是如何解决扩容问题的？',
+                'node_detail': '节点详情页有哪些功能？节点是如何处理广播和消息转发的？',
+                'account_detail': '账户详情页能做什么？如何创建到其他账户的快速通道？',
+                'chain_detail': '区块链钞票的详细信息怎么看？如何进行支付？',
+                'channel_detail': '快速通道详情页的功能说明。什么是级联支付？',
+                'node_logs': '节点的广播历史有什么用？我该如何阅读同步日志？',
+                'node_broadcast': '如何通过节点发送广播测试？这在 AOB 协议中扮演什么角色？',
+                'acc_chains': '账户的资产列表显示了什么？资产状态有哪些？',
+                'chain_history': '区块链的溯源历史是如何验证所有权的？',
+                'chan_pool': '快速通道的钞票存池是如何运作的？为什么要抵押资产？',
+                'chan_cascade': '级联支付的原理是什么？为什么它是原子性的？'
+            },
+            en: {
+                'intro': 'Please introduce AOB technology and the features of this simulator.',
+                'help': 'What should I do? Where should I click next?',
+                'init_net': 'How to establish the network? How does the network layer of AOB protocol work?',
+                'init_accounts': 'How to create user accounts? What is the relationship between accounts and nodes in AOB?',
+                'init_assets': 'What are blockchain banknotes? How does AOB achieve atomic ownership?',
+                'init_channels': 'What are Speedy Channels? How do they solve the scalability problem?',
+                'node_detail': 'Functions of node details. How do nodes handle broadcasting and forwarding?',
+                'account_detail': 'What to do on account details? How to create a Speedy Channel?',
+                'chain_detail': 'How to view banknote details and perform a transfer?',
+                'channel_detail': 'Speedy Channel details explanation. What is cascade payment?',
+                'node_logs': 'Purpose of node broadcast history and sync logs.',
+                'node_broadcast': 'How to send broadcast tests? What role does it play in AOB?',
+                'acc_chains': 'What does the account asset list show? States explanation.',
+                'chain_history': 'How does the provenance history verify ownership?',
+                'chan_pool': 'How does the channel banknote pool work? Why mortgage?',
+                'chan_cascade': 'Principle of cascade payment and why it is atomic.'
+            }
+        };
+
+        /**
+         * Helper to convert Markdown-style text from AI to HTML.
+         */
+        const mdToHtml = (md) => {
+            if (!md) return '';
+            return md
+                .replace(/### (.*)/g, '<h3 class="text-base font-black text-indigo-600 mt-4 mb-2">$1</h3>')
+                .replace(/## (.*)/g, '<h2 class="text-lg font-black text-slate-900 mt-6 mb-3">$2</h2>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+        };
+
+        let aiInstance = null;
+        let aiChat = null;
+        let appDocContext = "";
+
+        /**
+         * Fetches context documents for the AI to understand the app's requirements and logic.
+         */
+        const fetchContext = async () => {
+            try {
+                const reqRes = await fetch('request.md');
+                const reqText = await reqRes.text();
+                const helpRes = await fetch('help.md');
+                const helpText = await helpRes.text();
+                appDocContext = `CONTEXT INFORMATION FROM request.md:\n${reqText}\n\nCONTEXT FROM help.md:\n${helpText}`;
+            } catch (e) {
+                console.warn("AI Context fetch failed. Proceeding with internal knowledge.", e);
+                appDocContext = "Atomic Ownership Blockchains (AOB) Lab. Decentralized currency simulation.";
+            }
+        };
+
+        window.closeAI = () => {
+            document.getElementById('ai-overlay').classList.remove('open');
+        };
+
+        /**
+         * Opens AI chat and sends a localized help prompt.
+         * Matches UI language for the initial query and AI response.
+         */
+        window.askAI = async (topicId) => {
+            const overlay = document.getElementById('ai-overlay');
+            const messagesEl = document.getElementById('ai-messages');
+            overlay.classList.add('open');
+            
+            // Sync AI Header Language
+            document.getElementById('ai-header-title').innerText = currentLang === 'zh' ? 'AOB AI 助手' : 'AOB AI Assistant';
+            document.getElementById('ai-header-status').innerText = currentLang === 'zh' ? '正在运行' : 'Live Engine';
+            document.getElementById('ai-input').placeholder = currentLang === 'zh' ? '询问关于 AOB 的任何问题...' : 'Ask anything about AOB...';
+
+            if (topicId === 'general' && messagesEl.innerHTML.trim() !== '') return;
+
+            const initialMsg = AI_HELP_PROMPTS[currentLang][topicId] || AI_HELP_PROMPTS[currentLang]['help'];
+            
+            if (!aiInstance) {
+                aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                await fetchContext();
+            }
+
+            // Map current simulation step to human-readable guidance for AI
+            const stepsInfo = {
+                0: "Step 0: Start. User MUST click 'Create Network' (建立网络) to initialize nodes.",
+                1: "Step 1: Network Ready. User MUST click 'Create Accounts' (创建账户).",
+                2: "Step 2: Accounts Ready. User MUST click 'Create Banknotes' (创建区块链钞票).",
+                3: "Step 3: Banknotes Ready. User MUST click 'Establish Speedy Channels' (建立快速通道).",
+                4: "Step 4: Fully Operational. User can explore payments, cascades, and details."
+            };
+
+            // Re-instantiate chat with the latest simulation state and UI language context
+            aiChat = aiInstance.chats.create({
+                model: 'gemini-3-flash-preview',
+                config: {
+                    systemInstruction: `You are a technical expert for the "Advanced Cryptocurrency Demonstration" platform (AOB Lab). 
+                    KNOWLEDGE BASE: \n${appDocContext}
+                    CURRENT SIMULATION STATE: ${stepsInfo[simulationState.step]}
+                    UI LANGUAGE: ${currentLang === 'zh' ? 'Chinese' : 'English'}
+                    
+                    RULES:
+                    1. Detect and match input language. If input has Chinese or UI is Chinese, prioritize Chinese. Otherwise, English.
+                    2. BE EXTREMELY CONCISE (3-7 sentences maximum).
+                    3. ALWAYS GUIDE THE USER ON THE NEXT STEP based on the simulation step ${simulationState.step}. Tell them exactly what button to press.
+                    4. Focus on AOB advantages: decentralization, asset-as-blockchain, and speed.`,
+                }
+            });
+
+            appendAIMessage('user', initialMsg);
+            const botMsgEl = appendAIMessage('bot', currentLang === 'zh' ? '思考中...' : 'Thinking...');
+            
+            try {
+                // Ensure the response language strictly matches UI language for help triggers
+                const langForce = currentLang === 'zh' ? " (请用中文回答)" : " (Response in English)";
+                const response = await aiChat.sendMessageStream({ message: initialMsg + langForce });
+                let fullText = "";
+                botMsgEl.innerHTML = "";
+                for await (const chunk of response) {
+                    fullText += chunk.text;
+                    botMsgEl.innerHTML = mdToHtml(fullText);
+                    messagesEl.scrollTop = messagesEl.scrollHeight;
+                }
+            } catch (e) {
+                botMsgEl.innerText = currentLang === 'zh' ? "抱歉，出错了。请重试。" : "Sorry, an error occurred. Please try again.";
+            }
+        };
+
+        /**
+         * Sends user-typed messages to the AI.
+         * Detects input language and forces AI response to match input language.
+         */
+        window.sendAIMessage = async (customText) => {
+            const input = document.getElementById('ai-input');
+            const msg = (customText || input.value).trim();
+            if (!msg) return;
+            if (!customText) input.value = '';
+
+            // Ensure a chat session exists
+            if (!aiChat) await window.askAI('help');
+            
+            appendAIMessage('user', msg);
+            const botMsgEl = appendAIMessage('bot', currentLang === 'zh' ? '思考中...' : 'Thinking...');
+            
+            try {
+                // Determine language based on content: search for any Chinese character
+                const containsChinese = /[\u4e00-\u9fa5]/.test(msg);
+                const forcedLang = containsChinese ? " (请用中文回答)" : " (Response in English)";
+                
+                const response = await aiChat.sendMessageStream({ message: msg + forcedLang });
+                let fullText = "";
+                botMsgEl.innerHTML = "";
+                for await (const chunk of response) {
+                    fullText += chunk.text;
+                    botMsgEl.innerHTML = mdToHtml(fullText);
+                    document.getElementById('ai-messages').scrollTop = document.getElementById('ai-messages').scrollHeight;
+                }
+            } catch (e) {
+                botMsgEl.innerText = "Error: " + e.message;
+            }
+        };
+
+        function appendAIMessage(role, text) {
+            const container = document.getElementById('ai-messages');
+            const div = document.createElement('div');
+            div.className = `ai-message ${role === 'user' ? 'ai-msg-user' : 'ai-msg-bot'} text-sm shadow-sm`;
+            div.innerHTML = role === 'user' ? text : mdToHtml(text);
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return div;
+        }
+
+        /**
+         * Localized help icon utility.
+         */
+        const helpIcon = (topic) => `<button onclick="event.stopPropagation(); window.askAI('${topic}')" class="help-q-mark ml-1" title="AI Help"><i data-lucide="help-circle" size="14"></i></button>`;
+
         const TRANSLATIONS = {
             zh: {
                 title: "先进加密货币示范网",
@@ -149,47 +394,47 @@
                 overlay_chain: "钞票详情",
                 overlay_channel: "快速通道详情",
                 node_peers: "邻节点",
-                node_accounts: "托管本地账户",
+                node_accounts: "托管账户",
                 node_broadcast: "发送广播测试",
-                node_broadcast_placeholder: "输入测试报文...",
+                node_broadcast_placeholder: "输入报文...",
                 node_broadcast_btn: "广播",
-                node_logs: "节点广播历史",
+                node_logs: "同步历史",
                 no_logs: "暂无消息。",
                 no_accounts: "无",
-                acc_balance: "流动资产",
+                acc_balance: "资产流动性",
                 acc_create_channel: "创建快速通道",
-                acc_create_channel_btn: "签署并建立通道",
-                acc_chains: "所属钞票",
+                acc_create_channel_btn: "建立通道",
+                acc_chains: "所属资产",
                 chain_status: "状态",
                 chain_pay: "签署支付",
-                chain_pay_btn: "签署并广播变更",
-                chain_history: "溯源历史",
-                chan_pay: "点对点支付",
+                chain_pay_btn: "签署并广播",
+                chain_history: "溯源记录",
+                chan_pay: "原子支付",
                 chan_direct: "直接支付",
-                chan_cascade: "开启级联",
-                chan_cascade_builder: "原子级联构建器",
-                chan_cascade_exec: "签署并广播级联更新",
+                chan_cascade: "级联模式",
+                chan_cascade_builder: "原子级联路径构建",
+                chan_cascade_exec: "签署并广播更新",
                 chan_hop: "跳",
                 chan_via: "经由通道",
-                chan_withdraw: "提取钞票",
-                chan_pool: "通道内钞票存池",
-                chan_pool_empty: "暂无钞票存入。",
-                chan_withdraw_btn: "提取到账户",
-                chan_pay_history: "支付历史",
+                chan_withdraw: "资产提取",
+                chan_pool: "资产存池",
+                chan_pool_empty: "空。",
+                chan_withdraw_btn: "提取到钱包",
+                chan_pay_history: "支付结转",
                 status_mortgaged: "已抵押",
                 status_free: "可用",
-                log_sync: "[区块同步]",
-                log_test: "[发起测试]",
+                log_sync: "[同步]",
+                log_test: "[测试]",
                 log_author: "作者",
                 log_content: "内容",
-                log_msg_id: "消息ID",
-                ready_net: "网络就绪",
-                ready_users: "用户账户就绪",
-                ready_assets: "钞票就绪",
-                ready_channels: "快速通道就绪",
+                log_msg_id: "ID",
+                ready_net: "网络",
+                ready_users: "账户",
+                ready_assets: "钞票",
+                ready_channels: "通道",
                 broker_online: "Broker: 已连接",
                 broker_connecting: "Broker: 连接中...",
-                cascade_insufficient: "余额不足：路径中某段通道资金无法支撑此笔支付。",
+                cascade_insufficient: "路径余额不足。",
                 help_content: `
                     <div class="max-w-4xl mx-auto bg-white p-12 rounded-[3rem] shadow-xl space-y-10">
                         <h2 class="text-3xl font-black text-slate-900 tracking-tighter">欢迎来到先进加密货币示范平台。</h2>
@@ -251,66 +496,66 @@
                 title: "Advanced Cryptocurrency TestNet",
                 lang_toggle: "中文",
                 instruction_0: "Click the first button to initialize the P2P network nodes.",
-                instruction_4: "Speedy channels ready. Quick payments available.",
+                instruction_4: "Speedy channels ready. Instant payments available.",
                 ready_prefix: "Ready level: ",
-                ready_suffix: ". Please proceed to the next step.",
-                btn_init_net: "Create Network",
+                ready_suffix: ". Proceed to next step.",
+                btn_init_net: "Establish Network",
                 btn_init_accounts: "Create Accounts",
                 btn_init_assets: "Create Banknotes",
                 btn_init_channels: "Create Speedy Channels",
-                tab_help: "User Guide",
+                tab_help: "Guide",
                 tab_nodes: "Nodes",
                 tab_accounts: "Accounts",
                 tab_chains: "Banknotes",
                 tab_channels: "Channels",
                 overlay_details: "Details",
                 overlay_node: "Node Console",
-                overlay_account_local: "Local Account Console",
+                overlay_account_local: "Local Account",
                 overlay_account_remote: "Remote Account",
                 overlay_chain: "Banknote Details",
-                overlay_channel: "Channel Details",
+                overlay_channel: "Speedy Channel Details",
                 node_peers: "Peers",
-                node_accounts: "Hosted Local Accounts",
+                node_accounts: "Hosted Accounts",
                 node_broadcast: "Broadcast Test",
-                node_broadcast_placeholder: "Enter test message...",
+                node_broadcast_placeholder: "Enter message...",
                 node_broadcast_btn: "Broadcast",
-                node_logs: "Node Broadcast History",
-                no_logs: "No messages yet.",
+                node_logs: "Sync Logs",
+                no_logs: "No messages.",
                 no_accounts: "None",
                 acc_balance: "Liquidity",
-                acc_create_channel: "Create Speedy Channel",
-                acc_create_channel_btn: "Sign & Establish Channel",
-                acc_chains: "Owned Banknotes",
+                acc_create_channel: "Create Channel",
+                acc_create_channel_btn: "Establish Channel",
+                acc_chains: "Owned Assets",
                 chain_status: "Status",
-                chain_pay: "Sign Payment",
+                chain_pay: "Sign Transfer",
                 chain_pay_btn: "Sign & Broadcast",
-                chain_history: "Provenance History",
-                chan_pay: "Peer-to-Peer Pay",
+                chain_history: "Provenance",
+                chan_pay: "Atomic Pay",
                 chan_direct: "Direct Pay",
-                chan_cascade: "Enable Cascade",
-                chan_cascade_builder: "Atomic Cascade Builder",
-                chan_cascade_exec: "Sign & Broadcast Cascade",
+                chan_cascade: "Cascade Mode",
+                chan_cascade_builder: "Cascade Path Builder",
+                chan_cascade_exec: "Sign & Execute",
                 chan_hop: "Hop",
-                chan_via: "via Channel",
-                chan_withdraw: "Withdraw Banknote",
-                chan_pool: "Banknote Pool",
-                chan_pool_empty: "No banknotes in pool.",
-                chan_withdraw_btn: "Withdraw to Acc",
-                chan_pay_history: "Payment History",
-                status_mortgaged: "Mortgaged",
+                chan_via: "via",
+                chan_withdraw: "Withdrawal",
+                chan_pool: "Asset Pool",
+                chan_pool_empty: "Empty.",
+                chan_withdraw_btn: "Withdraw to Wallet",
+                chan_pay_history: "Settlement History",
+                status_mortgaged: "Locked",
                 status_free: "Free",
-                log_sync: "[Block Sync]",
-                log_test: "[Test Broadcast]",
+                log_sync: "[Sync]",
+                log_test: "[Test]",
                 log_author: "Author",
                 log_content: "Content",
-                log_msg_id: "Message ID",
-                ready_net: "Network Ready",
-                ready_users: "Accounts Ready",
-                ready_assets: "Banknotes Ready",
-                ready_channels: "Channels Ready",
-                broker_online: "Broker: Connected",
+                log_msg_id: "ID",
+                ready_net: "Network",
+                ready_users: "Accounts",
+                ready_assets: "Assets",
+                ready_channels: "Channels",
+                broker_online: "Broker: Online",
                 broker_connecting: "Broker: Connecting...",
-                cascade_insufficient: "Insufficient balance: A segment in the path cannot cover this payment.",
+                cascade_insufficient: "Insufficient path balance.",
                 help_content: `
                     <div class="max-w-4xl mx-auto bg-white p-12 rounded-[3rem] shadow-xl space-y-10">
                         <h2 class="text-3xl font-black text-slate-900 tracking-tighter">Welcome to the Advanced Cryptocurrency Demonstration Platform.</h2>
@@ -374,8 +619,46 @@
         const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
         const r0 = (n) => Math.round(n);
 
-        var currentLang = localStorage.getItem('aob_lang') || 'zh';
-        var mqttClient;
+        const urlParams = new URLSearchParams(window.location.search);
+        var currentLang = urlParams.get('lang') || localStorage.getItem('aob_lang') || 'zh';
+        if (currentLang !== 'zh' && currentLang !== 'en') currentLang = 'zh';
+
+        function t(key) { return TRANSLATIONS[currentLang][key] || key; }
+
+        window.toggleLanguage = function() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('aob_lang', currentLang);
+            updateLanguageContent();
+            updateStepUI();
+            renderAll();
+            aiChat = null; // Clear AI session to reset system instruction language
+        };
+
+        function updateLanguageContent() {
+            const helpTab = document.getElementById('tab-help');
+            if (helpTab) helpTab.innerHTML = t('help_content');
+            document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+            const titleEl = document.getElementById('main-title');
+            if (titleEl) titleEl.innerText = t('title');
+            const langToggleEl = document.getElementById('lang-toggle-text');
+            if (langToggleEl) langToggleEl.innerText = t('lang_toggle');
+            
+            const s = document.getElementById('mqtt-status');
+            const connectedCount = mqttClients.filter(c => c.connected).length;
+            if (s) {
+                if (connectedCount > 0) {
+                    s.innerText = `${t('broker_online')} (${connectedCount}/${mqttClients.length})`;
+                    s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
+                } else {
+                    s.innerText = t('broker_connecting');
+                    s.className = "px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100";
+                }
+            }
+            document.querySelectorAll('[data-t]').forEach(el => el.innerText = t(el.getAttribute('data-t')));
+            if (window.lucide) lucide.createIcons();
+        }
+
+        var mqttClients = []; 
         var superUser = null;
         var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4).toUpperCase();
         localStorage.setItem('aob_instance_id', appInstanceId);
@@ -393,46 +676,26 @@
             instanceId: appInstanceId
         };
 
-        // Track D3 Nodes and Links to maintain physical state
-        let vizNodes = [];
-        let vizLinks = [];
-
         const CONFIG = {
             NODE_COUNT: 30, ACCOUNT_COUNT: 10, BANKNOTE_COUNT: 100,
-            MQTT_BROKER: 'ws://test.mosquitto.org:8080', 
+            BROKERS: [
+                'wss://broker.emqx.io:8084/mqtt',
+                'wss://test.mosquitto.org:8081',
+                'ws://test.mosquitto.org:8080'
+            ],
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
-            DEFINITION_TEXT: "This is the CBDC of Dorothea. Define each blockchain as a prop bill, with the data structure of its genesis block as: H\\nS\\nK, where: H is the SHA256 hash of this document (Base64); K is the public key of the system user (Base64), fixed at [SysPubKey]; S is the serial number, with the following correspondence to the banknote's denomination:\\n1-20 1\\n21-40 5\\n41-60 10\\n61-80 20\\n81-100 50"
+            DEFINITION_TEXT: "Define AOB prop bill: H\\nS\\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
         };
 
-        function getLocal(key) { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; }
-        function setLocal(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
-        function t(key) { return TRANSLATIONS[currentLang][key] || key; }
-
-        window.toggleLanguage = function() {
-            currentLang = currentLang === 'zh' ? 'en' : 'zh';
-            localStorage.setItem('aob_lang', currentLang);
-            updateLanguageContent();
-            updateStepUI();
-            renderAll();
-        };
-
-        function updateLanguageContent() {
-            const helpTab = document.getElementById('tab-help');
-            if (helpTab) helpTab.innerHTML = t('help_content');
-            document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
-            const titleEl = document.getElementById('main-title');
-            if (titleEl) titleEl.innerText = t('title');
-            const langToggleEl = document.getElementById('lang-toggle-text');
-            if (langToggleEl) langToggleEl.innerText = t('lang_toggle');
-            const s = document.getElementById('mqtt-status');
-            if (s && mqttClient) {
-                s.innerText = mqttClient.connected ? t('broker_online') : t('broker_connecting');
-                s.className = mqttClient.connected ? "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100" : "px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100";
-            }
-            document.querySelectorAll('[data-t]').forEach(el => el.innerText = t(el.getAttribute('data-t')));
-            if (window.lucide) lucide.createIcons();
+        function multiPublish(topic, message) {
+            mqttClients.forEach(client => {
+                if (client.connected) client.publish(topic, message);
+            });
         }
 
+        /**
+         * State persistence logic. Serializes keys to JWK.
+         */
         async function saveFullState() {
             const data = {
                 nodes: simulationState.nodes.filter(n => n.instance === appInstanceId).map(n => ({ ...n, ledger: undefined, seenIds: undefined, logs: n.logs.slice(0, 50) })),
@@ -446,9 +709,10 @@
                 superUserPub: simulationState.superUserPub,
                 step: simulationState.step,
                 readyFlags: simulationState.readyFlags,
-                instanceId: simulationState.instanceId
+                instanceId: simulationState.instanceId,
+                remoteUsers: simulationState.remoteUsers
             };
-            setLocal('aob_lab_v13', data);
+            localStorage.setItem('aob_lab_v13_redundant_full', JSON.stringify(data));
         }
 
         async function getHash(text) { const hb = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)); return btoa(String.fromCharCode(...new Uint8Array(hb))); }
@@ -459,18 +723,14 @@
             if (simulationState.step >= 1) {
                 const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
                 if (locals.length > 0) {
-                    const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 3);
-                    subset.forEach(n => {
-                        mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ 
-                            type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors 
-                        }));
-                    });
+                    const n = locals[Math.floor(Math.random() * locals.length)];
+                    multiPublish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
                 }
             }
         }
 
         window.initNetwork = async function() {
-            const saved = getLocal('aob_lab_v13');
+            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
             if (saved && saved.nodes && saved.nodes.length > 0) {
                 simulationState.nodes = saved.nodes.map(n => ({ ...n, ledger: {}, seenIds: new Set(), logs: n.logs || [] }));
                 simulationState.instanceId = saved.instanceId;
@@ -489,17 +749,15 @@
                 });
                 simulationState.nodes = locals;
             }
-            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/${n.id}`));
             initNetworkViz();
             simulationState.readyFlags = [t('ready_net')];
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
-            startDiscovery();
+            startDiscovery(); setInterval(startDiscovery, 15000);
             await saveFullState();
         };
 
         window.initAccounts = async function() {
-            const saved = getLocal('aob_lab_v13');
-            simulationState.remoteUsers = []; 
+            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
             if (saved && saved.users && saved.users.length > 0) {
                 simulationState.superUserPub = saved.superUserPub;
                 const spriv = await crypto.subtle.importKey("jwk", saved.superUserJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
@@ -510,6 +768,7 @@
                     const pub = await crypto.subtle.importKey("raw", pubKeyBytes, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
                     return { ...u, keyPair: { privateKey: priv, publicKey: pub } };
                 }));
+                simulationState.remoteUsers = saved.remoteUsers || [];
             } else {
                 superUser = await generateKeyPair(); simulationState.superUserPub = superUser.pub;
                 for (let i = 0; i < CONFIG.ACCOUNT_COUNT; i++) {
@@ -524,20 +783,25 @@
         };
 
         window.initBanknotes = async function() {
-            const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
-            const h = await getHash(filledDef);
-            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                const gData = `${h}\\n${s}\\n${superUser.pub}`; 
-                const gId = await getHash(gData);
-                const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
-                const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
-                const ts = Date.now();
-                const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
-                const sig = await signData(payData, superUser.keyPair.privateKey);
-                const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
-                await updateGlobalState(genesis); await updateGlobalState(payment);
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
+            if (saved && saved.chains && saved.chains.length > 0) {
+                simulationState.chains = saved.chains;
+            } else {
+                const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
+                const h = await getHash(filledDef);
+                for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                    const gData = `${h}\\n${s}\\n${superUser.pub}`; 
+                    const gId = await getHash(gData);
+                    const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
+                    const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
+                    const ts = Date.now();
+                    const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
+                    const sig = await signData(payData, superUser.keyPair.privateKey);
+                    const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
+                    await updateGlobalState(genesis); await updateGlobalState(payment);
+                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+                }
             }
             simulationState.readyFlags.push(t('ready_assets'));
             simulationState.step = 3; updateStepUI(); window.switchTab('chains');
@@ -545,20 +809,25 @@
         };
 
         window.initChannels = async function() {
-            const users = simulationState.users;
-            const remotes = simulationState.remoteUsers;
-            for (let round = 0; round < 20; round++) {
-                for (let i = 0; i < users.length; i++) {
-                    let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
-                    if (curCount >= 4) continue;
-                    let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
-                    pool.sort(() => Math.random() - 0.5);
-                    for (let targetPub of pool) {
-                        const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
-                        const sorted = [users[i].pub, targetPub].sort();
-                        if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
-                            await createAndBroadcastChannel(users[i], u2);
-                            if (++curCount >= 4) break;
+            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
+            if (saved && saved.speedyChannels && saved.speedyChannels.length > 0) {
+                simulationState.speedyChannels = saved.speedyChannels;
+            } else {
+                const users = simulationState.users;
+                const remotes = simulationState.remoteUsers;
+                for (let round = 0; round < 20; round++) {
+                    for (let i = 0; i < users.length; i++) {
+                        let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
+                        if (curCount >= 4) continue;
+                        let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
+                        pool.sort(() => Math.random() - 0.5);
+                        for (let targetPub of pool) {
+                            const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
+                            const sorted = [users[i].pub, targetPub].sort();
+                            if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
+                                await createAndBroadcastChannel(users[i], u2);
+                                if (++curCount >= 4) break;
+                            }
                         }
                     }
                 }
@@ -575,16 +844,32 @@
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
                 await updateGlobalState(block);
-                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
-                // FIX: Removed explicit mortgage logic here to prevent doubling. 
-                // All mortgages are now reactive in updateGlobalState(rootBlock).
+                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                [u1, u2].forEach(async u => {
+                    const localUser = simulationState.users.find(lu => lu.pub === u.pub);
+                    if (localUser && localUser.keyPair) {
+                        const chains = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE').sort((a, b) => b.denomination - a.denomination);
+                        if(chains[0]) {
+                            const mData = `PREV:${chains[0].blocks[chains[0].blocks.length-1].id}\\nTYPE:MORTGAGE\\nTARGET:${cId}\\nTS:${Date.now()}`;
+                            const sig = await signData(mData, localUser.keyPair.privateKey);
+                            const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: u.pub, target: cId, chainRootId: chains[0].genesisId, sig };
+                            await updateGlobalState(mBlock);
+                            multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
+                        }
+                    }
+                });
             }
             return cId;
         }
 
+        /**
+         * Global State Processor. Handles incoming blocks from MQTT.
+         * Enforces asset ownership rules and updates local database.
+         */
         async function updateGlobalState(block) {
             if (simulationState.processedIds.has(block.id)) return;
             simulationState.processedIds.add(block.id);
+            
             simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
                 n.seenIds.add(block.id);
                 const entry = `${t('log_sync')} Type:${block.type}\\nID:${block.id.slice(0,16)}...\\n${t('log_author')}:${block.author.slice(0,8)}...\\n${t('log_content')}: ${block.data}`;
@@ -592,9 +877,8 @@
                 if(n.logs.length > 50) n.logs.pop();
             });
 
-            const isPotentialAccount = (str) => str && str.length > 60;
             const addUserIfRemote = (pub) => {
-                if (isPotentialAccount(pub) && !simulationState.users.find(u => u.pub === pub) && !simulationState.remoteUsers.includes(pub)) {
+                if (pub && pub.length > 60 && !simulationState.users.find(u => u.pub === pub) && !simulationState.remoteUsers.includes(pub)) {
                     simulationState.remoteUsers.push(pub);
                 }
             };
@@ -605,7 +889,7 @@
             let c = simulationState.chains.find(x => x.genesisId === block.chainRootId);
             if (block.type === 'GENESIS' && !c) {
                 const parts = block.data.split('\\n'); const s = +parts[1]; 
-                let d = s > 80 ? 50 : s > 60 ? 20 : s > 40 ? 10 : s > 20 ? 5 : 1;
+                let d = 1; if(s>80) d=50; else if(s>60) d=20; else if(s>40) d=10; else if(s>20) d=5;
                 c = { serial: s, denomination: r0(d), genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
                 simulationState.chains.push(c);
             } else if (c) {
@@ -629,24 +913,6 @@
                 simulationState.speedyChannels.push(chan);
                 addUserIfRemote(l[2]); addUserIfRemote(l[4]);
                 
-                // Reactive Auto-mortgage logic for any local participant detected in a new channel root
-                chan.participants.forEach(async p => {
-                    const localMe = simulationState.users.find(u => u.pub === p.pub);
-                    if (localMe) {
-                        const hasAlreadyMortgaged = simulationState.chains.some(asset => asset.currentOwner === chanId && asset.blocks.some(b => b.author === p.pub));
-                        if (!hasAlreadyMortgaged) {
-                            const myAssets = simulationState.chains.filter(asset => asset.currentOwner === p.pub && asset.status === 'FREE').sort((a,b) => b.denomination - a.denomination);
-                            if (myAssets[0]) {
-                                const mData = `PREV:${myAssets[0].blocks[myAssets[0].blocks.length-1].id}\\nTYPE:MORTGAGE\\nTARGET:${chanId}\\nTS:${Date.now()}`;
-                                const sig = await signData(mData, localMe.keyPair.privateKey);
-                                const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: p.pub, target: chanId, chainRootId: myAssets[0].genesisId, sig };
-                                await updateGlobalState(mBlock);
-                                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
-                            }
-                        }
-                    }
-                });
-
                 simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
                     if (pm.target === block.id) {
                         const p = chan.participants.find(p => p.pub === pm.author); if (p) p.balance = r2(p.balance + pm.value);
@@ -667,7 +933,7 @@
                         const logEntry = `[${msg.type}] From:${msg.originator}\\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\\n${t('log_msg_id')}: ${msg.mId}`;
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
                         if(n.logs.length > 50) n.logs.pop();
-                        if (msg.hop < 4) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
+                        if (msg.hop < 4) multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
                     }
                 }
             });
@@ -675,7 +941,7 @@
 
         function relayToNeighbors(node, payload) {
             node.neighbors.forEach(nbId => {
-                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
+                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
             });
         }
 
@@ -733,7 +999,7 @@
                     
                     const el = document.createElement('div'); el.className = `card ${typeClass}`;
                     el.onclick = () => window.openChannelOverlay(c.id);
-                    el.innerHTML = `<div class="text-[9px] font-black mb-2 uppercase opacity-70">${typeLabel} CHANNEL</div><div class="flex justify-between items-center text-xs"><div class="text-center font-bold"><div>$${c.participants[0].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal1?'participant-local':''}" title="${c.participants[0].pub}">${c.participants[0].fp}</div></div><i data-lucide="zap" class="opacity-40" size="14"></i><div class="text-center font-bold"><div>$${c.participants[1].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal2?'participant-local':''}" title="${c.participants[1].pub}">${c.participants[1].fp}</div></div></div><div class="text-[8px] mono opacity-40 mt-3 pt-2 border-t border-slate-100 truncate" title="${c.id}">ID: ${c.id.slice(0,16)}...</div>`;
+                    el.innerHTML = `<div class="text-[9px] font-black mb-2 uppercase tracking-tighter">${typeLabel} CHANNEL</div><div class="flex justify-between items-center text-xs"><div class="text-center font-bold"><div>$${c.participants[0].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal1?'participant-local':''}" title="${c.participants[0].pub}">${c.participants[0].fp}</div></div><i data-lucide="zap" class="opacity-40" size="14"></i><div class="text-center font-bold"><div>$${c.participants[1].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal2?'participant-local':''}" title="${c.participants[1].pub}">${c.participants[1].fp}</div></div></div><div class="text-[8px] mono opacity-40 mt-3 pt-2 border-t border-slate-100 truncate" title="${c.id}">ID: ${c.id.slice(0,16)}...</div>`;
                     chGrid.appendChild(el);
                 });
             }
@@ -749,7 +1015,7 @@
             document.getElementById('overlay-body').innerHTML = `
                 <div class="space-y-6">
                     <div class="p-6 bg-slate-900 rounded-[2rem] text-white shadow-xl border-4 border-indigo-900/30">
-                        <div class="text-[10px] uppercase font-black tracking-widest text-indigo-400 mb-3">${t('node_accounts')} (${boundUsers.length})</div>
+                        <div class="text-[10px] uppercase font-black tracking-widest text-indigo-400 mb-3">${t('node_accounts')}${helpIcon('node_detail')} (${boundUsers.length})</div>
                         <div class="space-y-2 mb-4">
                             ${boundUsers.map(u => `<button onclick="window.openAccountOverlay('${u.pub}')" class="w-full text-left text-[9px] mono bg-indigo-500/10 px-3 py-2 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/30 flex justify-between items-center"><span>${u.fp}...</span></button>`).join('') || `<div class="text-xs italic text-slate-500">${t('no_accounts')}</div>`}
                         </div>
@@ -757,11 +1023,11 @@
                         <div class="flex flex-wrap gap-2">${n.neighbors.map(nb => `<button onclick="window.openNodeOverlay('${nb}')" class="text-[9px] mono bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-indigo-500 transition-colors">${nb}</button>`).join('') || `<div class="text-xs italic text-slate-500">${t('no_accounts')}</div>`}</div>
                     </div>
                     <div class="p-8 bg-indigo-50 border-2 border-indigo-100 rounded-[2rem] space-y-4 shadow-inner">
-                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-2"><i data-lucide="radio" size="14"></i> ${t('node_broadcast')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-2"><i data-lucide="radio" size="14"></i> ${t('node_broadcast')}${helpIcon('node_broadcast')}</h4>
                         <div class="flex gap-2"><input id="node-test-input" type="text" placeholder="${t('node_broadcast_placeholder')}" class="flex-1 bg-white p-3 rounded-xl text-xs font-bold outline-none ring-1 ring-slate-200"><button onclick="window.broadcastTest('${id}')" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-md">${t('node_broadcast_btn')}</button></div>
                     </div>
                     <div class="space-y-3">
-                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('node_logs')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('node_logs')}${helpIcon('node_logs')}</h4>
                         <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">${n.logs.map(l => `<div class="p-4 border bg-white rounded-2xl flex flex-col gap-1 shadow-sm"><div class="flex justify-between items-center"><span class="text-[8px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">${l.type}</span><span class="text-[8px] font-bold text-slate-400 mono">${l.time}</span></div><div class="text-[10px] font-bold text-slate-700 break-all leading-relaxed whitespace-pre-wrap">${l.data}</div></div>`).join('') || `<div class="text-xs text-slate-300 italic text-center py-8">${t('no_logs')}</div>`}</div>
                     </div>
                 </div>`;
@@ -791,11 +1057,11 @@
                     </div>
                     ${isLocal ? `
                     <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-4 shadow-sm">
-                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest">${t('acc_create_channel')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest">${t('acc_create_channel')}${helpIcon('account_detail')}</h4>
                         <div class="flex flex-col gap-3">
                             <select id="manual-ch-target" class="w-full bg-slate-50 p-4 rounded-xl text-[10px] mono outline-none ring-1 ring-slate-200">
                                 ${others.map(t_pub => {
-                                    const isTargetLocal = simulationState.users.some(u=>u.pub===t_pub);
+                                    const isTargetLocal = simulationState.users.some(u => u.pub === t_pub);
                                     const prefix = isTargetLocal ? "(Local)" : "(Remote)";
                                     return `<option value="${t_pub}">${prefix} ${t_pub.slice(0,16)}...</option>`;
                                 }).join('')}
@@ -805,7 +1071,7 @@
                     </div>
                     ` : ''}
                     <div class="space-y-3">
-                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('acc_chains')} (${ownedChains.length})</h4>
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('acc_chains')}${helpIcon('acc_chains')} (${ownedChains.length})</h4>
                         <div class="grid grid-cols-2 gap-2">
                             ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold uppercase mt-1" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
                         </div>
@@ -831,7 +1097,7 @@
                 <div class="space-y-6">
                     <div class="p-10 bg-emerald-50 border-4 border-emerald-100 rounded-[3rem] text-center">
                         <div class="text-7xl font-black text-emerald-600">$${c.denomination}</div>
-                        <div class="text-[10px] font-black uppercase text-slate-400 mt-4 tracking-widest">${t('chain_status')}: ${c.status === 'FREE' ? t('status_free') : t('status_mortgaged')}</div>
+                        <div class="text-[10px] font-black uppercase text-slate-400 mt-4 tracking-widest">${t('chain_status')}${helpIcon('chain_detail')}: ${c.status === 'FREE' ? t('status_free') : t('status_mortgaged')}</div>
                     </div>
                     ${isLocal && c.status === 'FREE' ? `
                     <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-5 shadow-lg">
@@ -846,20 +1112,21 @@
                         <button onclick="window.execPayment('${id}')" class="w-full bg-indigo-600 text-white py-5 rounded-xl font-black uppercase text-xs shadow-xl active:scale-95">${t('chain_pay_btn')}</button>
                     </div>` : `<div class="p-10 text-center text-xs italic bg-slate-50 rounded-2xl">Read Only</div>`}
                     <div class="space-y-3">
-                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chain_history')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chain_history')}${helpIcon('chain_history')}</h4>
                         <div class="space-y-2">
                             ${c.blocks.map(b => `<div class="p-4 border bg-white rounded-2xl text-[10px] shadow-sm"><div class="flex justify-between font-black text-indigo-600 mb-1"><span>${b.type}</span><span class="mono" title="${b.id}">${b.id.slice(0,16)}...</span></div><div class="text-slate-500 mono break-all whitespace-pre-wrap">${b.data}</div></div>`).join('')}
                         </div>
                     </div>
                 </div>`;
+            if(window.lucide) lucide.createIcons();
         };
 
         window.execPayment = async function(chainId) {
             const c = simulationState.chains.find(x => x.genesisId === chainId), target = document.getElementById('pay-target-select').value, owner = simulationState.users.find(u => u.pub === c.currentOwner);
             const data = `PREV:${c.blocks[c.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${target}\\nTS:${Date.now()}`;
             const sig = await signData(data, owner.keyPair.privateKey);
-            const block = { id: sig, type: 'PAYMENT', data, author: c.currentOwner, target, chainRootId: chainId, sig };
-            await updateGlobalState(block); mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            const block = { id: sig, type: 'PAYMENT', author: c.currentOwner, target, chainRootId: chainId, data: data, sig };
+            await updateGlobalState(block); multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
             window.closeOverlay(); await saveFullState();
         };
 
@@ -884,9 +1151,9 @@
                         </div>
                     </div>
                     <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-6 shadow-lg">
-                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pay')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pay')}${helpIcon('channel_detail')}</h4>
                         <div class="flex gap-4">
-                            <select id="ch-sender" class="flex-1 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none">
+                            <select id="ch-sender" class="flex-1 bg-slate-50 p-3 rounded-lg text-xs font-black outline-none">
                                 <option value="0" ${!isP1Local ? 'disabled' : ''}>${p1.fp}</option>
                                 <option value="1" ${!isP2Local ? 'disabled' : ''}>${p2.fp}</option>
                             </select>
@@ -898,7 +1165,7 @@
                         </div>
                     </div>
                     <div id="cascade-builder" class="${cascadeSession.active ? '' : 'hidden'} p-8 bg-indigo-50 rounded-[2.5rem] shadow-inner border-2 border-indigo-100 space-y-4">
-                        <h4 class="text-[11px] font-black uppercase text-indigo-600 tracking-widest">${t('chan_cascade_builder')}</h4>
+                        <h4 class="text-[11px] font-black uppercase text-indigo-600 tracking-widest">${t('chan_cascade_builder')}${helpIcon('chan_cascade')}</h4>
                         <div id="cascade-steps" class="space-y-2"></div>
                         <div id="cascade-next" class="pt-4 border-t border-indigo-100"></div>
                         <button onclick="window.executeCascade()" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl mt-4">${t('chan_cascade_exec')}</button>
@@ -919,7 +1186,7 @@
                         </div>
                     </div>
                     <div class="p-8 bg-white border-2 border-slate-50 rounded-[2.5rem] space-y-4">
-                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pool')}</h4>
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pool')}${helpIcon('chan_pool')}</h4>
                         <div class="space-y-3">
                             ${mortgagedNotes.length > 0 ? mortgagedNotes.map(n => `
                                 <div class="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
@@ -943,11 +1210,11 @@
 
             const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${user.pub}\\nTS:${Date.now()}`;
             const sig = await signData(data, localUser.keyPair.privateKey);
-            const block = { id: sig, type: 'PAYMENT', data, author: chanId, target: user.pub, chainRootId: chainId, sig };
+            const block = { id: sig, type: 'PAYMENT', author: chanId, target: user.pub, chainRootId: chainId, data: data, sig };
             
             user.balance = r2(user.balance - chain.denomination);
             await updateGlobalState(block);
-            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: block }));
             window.refreshChannelUI(chanId);
             await saveFullState();
         };
@@ -962,7 +1229,7 @@
             
             const msgId = Math.random().toString(36).substr(2, 9);
             simulationState.processedIds.add(msgId);
-            mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
+            multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
             window.refreshChannelUI(id); await saveFullState();
         };
 
@@ -1021,7 +1288,7 @@
                 c.history.push({ from: sender.fp, to: receiver.fp, amount: amt, time: Date.now(), cascade: true });
                 const msgId = Math.random().toString(36).substr(2, 9);
                 simulationState.processedIds.add(msgId);
-                mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
+                multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
                 curPub = receiver.pub;
             });
             cascadeSession.active = false; window.closeOverlay(); await saveFullState();
@@ -1031,6 +1298,9 @@
         window.closeOverlay = () => { currentOpenedChannelId = null; document.getElementById('details-overlay').classList.remove('open'); window.renderAll(); };
         
         let simulation, svg, g;
+        /**
+         * Initialize D3 Simulation for Mesh Network visualization.
+         */
         function initNetworkViz() {
             svg = d3.select("#network-svg"); if(!svg.node()) return;
             const container = svg.node().parentElement;
@@ -1039,16 +1309,18 @@
             simulation = d3.forceSimulation().force("link", d3.forceLink().id(d => d.id).distance(150)).force("charge", d3.forceManyBody().strength(-400)).force("center", d3.forceCenter(w / 2, h / 2));
             updateNetworkViz();
         }
+
+        /**
+         * Update graph with real-time nodes and connections.
+         */
         function updateNetworkViz() {
             if(!g) return;
             const container = document.getElementById('network-svg').parentElement;
-            const w = container.clientWidth, h = container.clientHeight;
             const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
             const links = []; 
             simulationState.nodes.forEach(n => { 
                 n.neighbors.forEach(nbid => { 
                     if (simulationState.nodes.some(x => x.id === nbid)) {
-                        // Avoid duplicates in visual links
                         const linkId = [n.id, nbid].sort().join('-');
                         if (!links.some(l => l.linkId === linkId)) {
                             links.push({ source: n.id, target: nbid, linkId }); 
@@ -1059,8 +1331,7 @@
             g.selectAll("*").remove();
             const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
             const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 12).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node shadow-lg").on("click", (e, d) => window.openNodeOverlay(d.id));
-            simulation.nodes(nodes); simulation.force("link").links(links); simulation.force("center", d3.forceCenter(w / 2, h / 2));
-            simulation.alpha(1).restart();
+            simulation.nodes(nodes); simulation.force("link").links(links); simulation.alpha(1).restart();
             simulation.on("tick", () => { link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y); node.attr("cx", d => d.x).attr("cy", d => d.y); });
         }
 
@@ -1068,19 +1339,25 @@
             const container = document.getElementById('action-buttons'); if (!container) return;
             container.innerHTML = '';
             const steps = [
-                { id: 'btn-init-net', index: 0, text: t('btn_init_net'), action: 'initNetwork()', icon: 'network' },
-                { id: 'btn-init-accounts', index: 1, text: t('btn_init_accounts'), action: 'initAccounts()', icon: 'users' },
-                { id: 'btn-init-assets', index: 2, text: t('btn_init_assets'), action: 'initBanknotes()', icon: 'banknote' },
-                { id: 'btn-init-channels', index: 3, text: t('btn_init_channels'), action: 'initChannels()', icon: 'zap' }
+                { id: 'btn-init-net', index: 0, text: t('btn_init_net'), action: 'initNetwork()', icon: 'network', topic: 'init_net' },
+                { id: 'btn-init-accounts', index: 1, text: t('btn_init_accounts'), action: 'initAccounts()', icon: 'users', topic: 'init_accounts' },
+                { id: 'btn-init-assets', index: 2, text: t('btn_init_assets'), action: 'initBanknotes()', icon: 'banknote', topic: 'init_assets' },
+                { id: 'btn-init-channels', index: 3, text: t('btn_init_channels'), action: 'initChannels()', icon: 'zap', topic: 'init_channels' }
             ];
             steps.forEach(s => {
                 if (simulationState.step > s.index) return;
+                const wrapper = document.createElement('div');
+                wrapper.className = "flex items-center gap-1";
+
                 const btn = document.createElement('button');
                 btn.id = s.id; btn.onclick = new Function(s.action);
                 btn.className = `btn-box ${simulationState.step === s.index ? 'btn-active' : 'btn-inactive'}`;
                 btn.disabled = simulationState.step !== s.index;
                 btn.innerHTML = `<i data-lucide="${s.icon}" size="18"></i> ${s.text}`;
-                container.appendChild(btn);
+                
+                wrapper.appendChild(btn);
+                wrapper.innerHTML += helpIcon(s.topic);
+                container.appendChild(wrapper);
             });
             const instr = document.getElementById('instruction-text');
             if(simulationState.step === 0) instr.innerText = t('instruction_0');
@@ -1089,73 +1366,92 @@
             if(window.lucide) lucide.createIcons();
         };
 
-        mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { clientId: 'aob_v25_' + appInstanceId, clean: true });
-        mqttClient.on('connect', () => { 
-            mqttClient.subscribe(CONFIG.TOPIC_MESH); mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY); 
-            const s = document.getElementById('mqtt-status');
-            if(s) {
-                s.innerText = t('broker_online');
-                s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
-            }
-            setInterval(startDiscovery, 10000);
-        });
-        mqttClient.on('message', (t_name, p) => {
-            try {
-                const d = JSON.parse(p.toString());
-                if (t_name === CONFIG.TOPIC_MESH) { if (d.relay) handleIncomingRelay(d.relay); else if (d.block) updateGlobalState(d.block); }
-                else if (t_name === CONFIG.TOPIC_DISCOVERY) {
-                    if (d.instance === appInstanceId) return;
-                    let rNode = simulationState.nodes.find(x => x.id === d.id);
-                    if (!rNode) { 
-                        rNode = { id: d.id, instance: d.instance, neighbors: d.neighbors || [], logs: [], seenIds: new Set(), ledger: {} }; 
-                        simulationState.nodes.push(rNode); 
-                        mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/${rNode.id}`); 
-                    } else if (d.neighbors) {
-                        d.neighbors.forEach(nb => { if(!rNode.neighbors.includes(nb)) rNode.neighbors.push(nb); });
-                    }
+        const isHttps = window.location.protocol === 'https:';
+        const filteredBrokers = isHttps ? CONFIG.BROKERS.filter(url => url.startsWith('wss:')) : CONFIG.BROKERS;
 
-                    if (d.type === 'HELLO') {
-                        const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
-                        if(locals[0]) {
-                            const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 2);
-                            subset.forEach(ln => {
-                                if(!ln.neighbors.includes(d.id)) { 
-                                    ln.neighbors.push(d.id); 
-                                    if(!rNode.neighbors.includes(ln.id)) rNode.neighbors.push(ln.id);
-                                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ 
-                                        type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors 
-                                    })); 
+        filteredBrokers.forEach((url, idx) => {
+            try {
+                const client = mqtt.connect(url, { 
+                    clientId: `aob_v25_${appInstanceId}_${idx}_${Math.random().toString(36).substr(2,4)}`, 
+                    clean: true,
+                    connectTimeout: 10000,
+                    keepalive: 60,
+                    reconnectPeriod: 5000
+                });
+
+                client.on('connect', () => { 
+                    client.subscribe(CONFIG.TOPIC_MESH);
+                    client.subscribe(CONFIG.TOPIC_DISCOVERY);
+                    client.subscribe(`${CONFIG.TOPIC_P2P}/#`);
+                    updateLanguageContent(); 
+                });
+
+                client.on('message', (topic, payload) => {
+                    try {
+                        const d = JSON.parse(payload.toString());
+                        if (topic === CONFIG.TOPIC_MESH) { 
+                            if (d.block) updateGlobalState(d.block); 
+                            else if (d.relay) handleIncomingRelay(d.relay);
+                        }
+                        else if (topic === CONFIG.TOPIC_DISCOVERY) {
+                            if (d.instance === appInstanceId) return;
+                            let rNode = simulationState.nodes.find(x => x.id === d.id);
+                            if (!rNode) { 
+                                rNode = { id: d.id, instance: d.instance, neighbors: d.neighbors || [], logs: [], seenIds: new Set(), ledger: {} }; 
+                                simulationState.nodes.push(rNode); 
+                            }
+                            if (d.type === 'HELLO') {
+                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
+                                if(locals[0]) {
+                                    const ln = locals[Math.floor(Math.random() * locals.length)];
+                                    if(!ln.neighbors.includes(d.id)) { 
+                                        ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); 
+                                        multiPublish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors })); 
+                                    }
                                 }
-                            });
-                        }
-                    } else if (d.type === 'HELLO_BACK') {
-                        const ln = simulationState.nodes.find(n => n.id === d.targetId && n.instance === appInstanceId);
-                        if (ln && !ln.neighbors.includes(d.id)) {
-                             ln.neighbors.push(d.id);
-                             if (!rNode.neighbors.includes(ln.id)) rNode.neighbors.push(ln.id);
-                        }
-                    }
-                    if(simulation) updateNetworkViz();
-                } else if (t_name.startsWith(CONFIG.TOPIC_P2P)) {
-                    if (d.type === 'SPEEDY_CHANNEL_UPDATE') {
-                        const c = simulationState.speedyChannels.find(x => x.id === d.channelId);
-                        if (c && !simulationState.processedIds.has(d.msgId)) {
+                            } else if (d.type === 'HELLO_BACK') {
+                                const ln = simulationState.nodes.find(n => n.id === d.targetId && n.instance === appInstanceId);
+                                if(ln && !ln.neighbors.includes(d.id)) { ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); }
+                            }
+                            if(simulation) updateNetworkViz();
+                        } else if (topic.startsWith(CONFIG.TOPIC_P2P) && d.type === 'SPEEDY_CHANNEL_UPDATE') {
+                            if (simulationState.processedIds.has(d.msgId)) return;
                             simulationState.processedIds.add(d.msgId);
-                            const sIdx = c.participants.findIndex(p => p.pub === d.senderPub);
-                            if (sIdx !== -1) {
-                                const receiverIdx = sIdx === 0 ? 1 : 0;
-                                c.participants[sIdx].balance = r2(c.participants[sIdx].balance - d.amount);
-                                c.participants[receiverIdx].balance = r2(c.participants[receiverIdx].balance + d.amount);
-                                c.history.push({ from: c.participants[sIdx].fp, to: c.participants[receiverIdx].fp, amount: d.amount, time: Date.now() });
-                                window.renderAll(); if (currentOpenedChannelId === d.channelId) window.refreshChannelUI(d.channelId);
+                            const c = simulationState.speedyChannels.find(x => x.id === d.channelId);
+                            if (c) {
+                                const sIdx = c.participants.findIndex(p => p.pub === d.senderPub);
+                                if (sIdx !== -1) {
+                                    const rIdx = sIdx === 0 ? 1 : 0;
+                                    c.participants[sIdx].balance = r2(c.participants[sIdx].balance - d.amount);
+                                    c.participants[rIdx].balance = r2(c.participants[rIdx].balance + d.amount);
+                                    c.history.push({ from: c.participants[sIdx].fp, to: c.participants[rIdx].fp, amount: d.amount, time: Date.now() });
+                                    if (currentOpenedChannelId === d.channelId) window.refreshChannelUI(d.channelId);
+                                    window.renderAll();
+                                }
                             }
                         }
-                    }
-                }
-            } catch (e) {}
+                    } catch(e) {}
+                });
+
+                client.on('error', (err) => { 
+                    console.warn(`Broker error (${url}):`, err); 
+                    updateLanguageContent();
+                });
+                
+                client.on('close', () => { updateLanguageContent(); });
+                client.on('reconnect', () => { updateLanguageContent(); });
+
+                mqttClients.push(client);
+            } catch(e) { console.error("MQTT Init Fail", url, e); }
         });
 
-        window.onload = function() { updateLanguageContent(); window.updateStepUI(); window.renderAll(); };
+        setInterval(updateLanguageContent, 3000);
+
+        window.onload = function() { 
+            updateLanguageContent(); 
+            window.updateStepUI(); 
+            window.renderAll(); 
+        };
     </script>
 </body>
 </html>
