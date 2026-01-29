@@ -651,10 +651,9 @@
             if (langToggleEl) langToggleEl.innerText = t('lang_toggle');
             
             const s = document.getElementById('mqtt-status');
-            const connectedCount = mqttClients.filter(c => c.connected).length;
             if (s) {
-                if (connectedCount > 0) {
-                    s.innerText = `${t('broker_online')} (${connectedCount}/${mqttClients.length})`;
+                if (mqttClient && mqttClient.connected) {
+                    s.innerText = t('broker_online');
                     s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
                 } else {
                     s.innerText = t('broker_connecting');
@@ -665,7 +664,6 @@
             if (window.lucide) lucide.createIcons();
         }
 
-        var mqttClients = []; 
         var superUser = null;
         var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4);
         localStorage.setItem('aob_instance_id', appInstanceId);
@@ -684,21 +682,13 @@
         };
 
         const CONFIG = {
-            NODE_COUNT: 30, ACCOUNT_COUNT: 10, BANKNOTE_COUNT: 100,
-            BROKERS: [
-                'wss://broker.emqx.io:8084/mqtt',
-                'wss://test.mosquitto.org:8081',
-                'ws://test.mosquitto.org:8080'
-            ],
+            NODE_COUNT: 15, ACCOUNT_COUNT: 5, BANKNOTE_COUNT: 50,
+            MQTT_BROKER: "wss://broker.emqx.io:8084/mqtt",
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
             DEFINITION_TEXT: "Define AOB prop bill: H\\nS\\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
         };
 
-        function multiPublish(topic, message) {
-            mqttClients.forEach(client => {
-                if (client.connected) client.publish(topic, message);
-            });
-        }
+        let mqttClient = null;
 
         /**
          * State persistence logic. Serializes keys to JWK.
@@ -731,7 +721,7 @@
                 const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
                 if (locals.length > 0) {
                     const n = locals[Math.floor(Math.random() * locals.length)];
-                    multiPublish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
+                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
                 }
             }
         }
@@ -759,7 +749,7 @@
             initNetworkViz();
             simulationState.readyFlags = [t('ready_net')];
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
-            startDiscovery(); setInterval(startDiscovery, 15000);
+            startDiscovery();
             await saveFullState();
         };
 
@@ -806,8 +796,8 @@
                     const sig = await signData(payData, superUser.keyPair.privateKey);
                     const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
                     await updateGlobalState(genesis); await updateGlobalState(payment);
-                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
-                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
                 }
             }
             simulationState.readyFlags.push(t('ready_assets'));
@@ -852,7 +842,7 @@
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
                 await updateGlobalState(block);
-                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
             }
             return cId;
         }
@@ -921,7 +911,7 @@
                                 const sig = await signData(mData, localMe.keyPair.privateKey);
                                 const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: p.pub, target: chanId, chainRootId: myAssets[0].genesisId, sig };
                                 await updateGlobalState(mBlock);
-                                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
+                                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
                             }
                         }
                     }
@@ -947,16 +937,19 @@
                         const logEntry = `[${msg.type}] From:${msg.originator}\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\n${t('log_msg_id')}: ${msg.mId}`;
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
                         if(n.logs.length > 50) n.logs.pop();
-                        if (msg.hop < 3) multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
+                        if (msg.hop < 4 && mqttClient && mqttClient.connected) {
+                            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
+                        }
                     }
                 }
             });
+            window.debounceRender();
         }
 
         function relayToNeighbors(node, payload) {
-            node.neighbors.forEach(nbId => {
-                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
-            });
+            if (mqttClient && mqttClient.connected) {
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
+            }
         }
 
         window.switchTab = function(id) {
@@ -1051,10 +1044,10 @@
         window.broadcastTest = (nid) => {
             const input = document.getElementById('node-test-input'); if(!input.value) return;
             const node = simulationState.nodes.find(x => x.id === nid);
-            const mId = Math.random().toString(36).substr(2, 9);
+            const mId = Math.random().toString(36).substring(7);
             relayToNeighbors(node, { type: 'BROADCAST_TEST', content: input.value, originator: nid, mId });
-            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\n${t('log_content')}: ${input.value}\n${t('log_msg_id')}: ${mId}` });
-            input.value = ''; setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
+            input.value = '';
+            setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
         };
 
         window.openAccountOverlay = function(pub) {
@@ -1140,7 +1133,7 @@
             const data = `PREV:${c.blocks[c.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${target}\\nTS:${Date.now()}`;
             const sig = await signData(data, owner.keyPair.privateKey);
             const block = { id: sig, type: 'PAYMENT', author: c.currentOwner, target, chainRootId: chainId, data: data, sig };
-            await updateGlobalState(block); multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            await updateGlobalState(block); if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
             window.closeOverlay(); await saveFullState();
         };
 
@@ -1228,7 +1221,7 @@
             
             user.balance = r2(user.balance - chain.denomination);
             await updateGlobalState(block);
-            multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: block }));
+            if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: block }));
             window.refreshChannelUI(chanId);
             await saveFullState();
         };
@@ -1243,7 +1236,7 @@
             
             const msgId = Math.random().toString(36).substr(2, 9);
             simulationState.processedIds.add(msgId);
-            multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
+            if (mqttClient && mqttClient.connected) mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
             window.refreshChannelUI(id); await saveFullState();
         };
 
@@ -1302,7 +1295,7 @@
                 c.history.push({ from: sender.fp, to: receiver.fp, amount: amt, time: Date.now(), cascade: true });
                 const msgId = Math.random().toString(36).substr(2, 9);
                 simulationState.processedIds.add(msgId);
-                multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
+                if (mqttClient && mqttClient.connected) mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
                 curPub = receiver.pub;
             });
             cascadeSession.active = false; window.closeOverlay(); await saveFullState();
@@ -1402,27 +1395,29 @@
             if(window.lucide) lucide.createIcons();
         };
 
-        const isHttps = window.location.protocol === 'https:';
-        const filteredBrokers = isHttps ? CONFIG.BROKERS.filter(url => url.startsWith('wss:')) : CONFIG.BROKERS;
+        mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, {
+            clientId: `aob_v25_${appInstanceId}_${Math.random().toString(36).substr(2,4)}`,
+            clean: true,
+            connectTimeout: 10000,
+            keepalive: 60,
+            reconnectPeriod: 5000
+        });
 
-        filteredBrokers.forEach((url, idx) => {
-            try {
-                const client = mqtt.connect(url, { 
-                    clientId: `aob_v25_${appInstanceId}_${idx}_${Math.random().toString(36).substr(2,4)}`, 
-                    clean: true,
-                    connectTimeout: 10000,
-                    keepalive: 60,
-                    reconnectPeriod: 5000
-                });
+        let discoveryInterval = null;
+        mqttClient.on('connect', () => {
+            mqttClient.subscribe(CONFIG.TOPIC_MESH);
+            mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY);
+            mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/#`);
+            updateLanguageContent();
+            const s = document.getElementById('mqtt-status');
+            if(s) {
+                s.innerText = t('broker_online');
+                s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
+            }
+            if (!discoveryInterval) discoveryInterval = setInterval(startDiscovery, 10000);
+        });
 
-                client.on('connect', () => { 
-                    client.subscribe(CONFIG.TOPIC_MESH);
-                    client.subscribe(CONFIG.TOPIC_DISCOVERY);
-                    client.subscribe(`${CONFIG.TOPIC_P2P}/#`);
-                    updateLanguageContent(); 
-                });
-
-                client.on('message', (topic, payload) => {
+        mqttClient.on('message', (topic, payload) => {
                     try {
                         const d = JSON.parse(payload.toString());
                         if (topic === CONFIG.TOPIC_MESH) { 
@@ -1442,7 +1437,7 @@
                                     const ln = locals[Math.floor(Math.random() * locals.length)];
                                     if(!ln.neighbors.includes(d.id)) { 
                                         ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); 
-                                        multiPublish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors })); 
+                                        if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors }));
                                     }
                                 }
                             } else if (d.type === 'HELLO_BACK') {
@@ -1467,19 +1462,15 @@
                             }
                         }
                     } catch(e) {}
-                });
-
-                client.on('error', (err) => { 
-                    console.warn(`Broker error (${url}):`, err); 
-                    updateLanguageContent();
-                });
-                
-                client.on('close', () => { updateLanguageContent(); });
-                client.on('reconnect', () => { updateLanguageContent(); });
-
-                mqttClients.push(client);
-            } catch(e) { console.error("MQTT Init Fail", url, e); }
         });
+
+        mqttClient.on('error', (err) => {
+            console.warn(`Broker error:`, err);
+            updateLanguageContent();
+        });
+
+        mqttClient.on('close', () => { updateLanguageContent(); });
+        mqttClient.on('reconnect', () => { updateLanguageContent(); });
 
         let renderTimeout;
         window.debounceRender = () => {
