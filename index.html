@@ -667,7 +667,7 @@
 
         var mqttClients = []; 
         var superUser = null;
-        var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4).toUpperCase();
+        var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4);
         localStorage.setItem('aob_instance_id', appInstanceId);
 
         var cascadeSession = { active: false, path: [], initiatorIdx: 0 }; 
@@ -871,8 +871,9 @@
                 if(n.logs.length > 50) n.logs.pop();
             });
 
+            const isPotentialAccount = (str) => str && str.length > 60;
             const addUserIfRemote = (pub) => {
-                if (pub && pub.length > 60 && !simulationState.users.find(u => u.pub === pub) && !simulationState.remoteUsers.includes(pub)) {
+                if (isPotentialAccount(pub) && !simulationState.users.find(u => u.pub === pub) && !simulationState.remoteUsers.includes(pub)) {
                     simulationState.remoteUsers.push(pub);
                 }
             };
@@ -908,7 +909,7 @@
                 addUserIfRemote(l[2]); addUserIfRemote(l[4]);
 
                 // Reactive Auto-mortgage logic for any local participant detected in a new channel root
-                chan.participants.forEach(async p => {
+                for (const p of chan.participants) {
                     const localMe = simulationState.users.find(u => u.pub === p.pub);
                     if (localMe) {
                         const hasAlreadyMortgaged = simulationState.chains.some(asset => asset.currentOwner === chanId && asset.blocks.some(b => b.author === p.pub));
@@ -923,7 +924,7 @@
                             }
                         }
                     }
-                });
+                }
                 
                 simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
                     if (pm.target === block.id) {
@@ -997,7 +998,7 @@
                     let stateClass = c.status === 'MORTGAGED' ? "chain-mortgaged" : (isLocal ? "chain-local" : "chain-remote");
                     el.className = `card text-center ${stateClass}`;
                     el.onclick = () => window.openChainOverlay(c.genesisId);
-                    el.innerHTML = `<div class="text-xl font-black chain-val">$${r0(c.denomination)}</div><div class="text-[9px] mono text-slate-500 font-bold mt-1 uppercase" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div>`;
+                    el.innerHTML = `<div class="text-xl font-black chain-val">$${r0(c.denomination)}</div><div class="text-[9px] mono text-slate-500 font-bold mt-1" title="${c.genesisId}"><span class="uppercase">ID</span>:${c.genesisId.slice(0,8)}</div>`;
                     cGrid.appendChild(el);
                 });
             }
@@ -1085,7 +1086,7 @@
                     <div class="space-y-3">
                         <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('acc_chains')}${helpIcon('acc_chains')} (${ownedChains.length})</h4>
                         <div class="grid grid-cols-2 gap-2">
-                            ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold uppercase mt-1" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
+                            ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold mt-1" title="${c.genesisId}"><span class="uppercase">ID</span>:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
                         </div>
                     </div>
                 </div>`;
@@ -1254,7 +1255,7 @@
             stepsEl.innerHTML = cascadeSession.path.map((cid, i) => {
                 const chan = simulationState.speedyChannels.find(x => x.id === cid), sender = chan.participants.find(p => p.pub === curPub), receiver = chan.participants.find(p => p.pub !== curPub);
                 curPub = receiver.pub;
-                return `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm"><div class="flex justify-between font-black text-indigo-600 uppercase"><span>${t('chan_hop')} #${i+1}</span><span class="mono">ID:${cid.slice(0,8)}</span></div><div class="flex items-center gap-2 mt-1"><span class="mono px-2 py-0.5 bg-indigo-50 rounded font-bold">${sender.fp}</span><i data-lucide="arrow-right" size="10" class="text-slate-300"></i><span class="mono px-2 py-0.5 bg-emerald-50 rounded font-bold">${receiver.fp}</span></div></div>`;
+                return `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm"><div class="flex justify-between font-black text-indigo-600"><span class="uppercase">${t('chan_hop')} #${i+1}</span><span class="mono">ID:${cid.slice(0,8)}</span></div><div class="flex items-center gap-2 mt-1"><span class="mono px-2 py-0.5 bg-indigo-50 rounded font-bold">${sender.fp}</span><i data-lucide="arrow-right" size="10" class="text-slate-300"></i><span class="mono px-2 py-0.5 bg-emerald-50 rounded font-bold">${receiver.fp}</span></div></div>`;
             }).join('');
             
             const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === curPub));
@@ -1269,7 +1270,7 @@
                         <span class="font-black">${t('chan_via')} ${o.id.slice(0,8)}</span>
                         <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase ${typeClass.replace('chan-','bg-')} ${typeClass.replace('chan-','text-')} border opacity-80">${typeLabel}</span>
                     </div>
-                    <div class="flex justify-between text-[8px] opacity-60 font-bold uppercase w-full border-t border-indigo-50 pt-1">
+                    <div class="flex justify-between text-[8px] opacity-60 font-bold w-full border-t border-indigo-50 pt-1">
                         <span>${o.participants[0].fp}: $${o.participants[0].balance.toFixed(2)}</span>
                         <span>${o.participants[1].fp}: $${o.participants[1].balance.toFixed(2)}</span>
                     </div>
