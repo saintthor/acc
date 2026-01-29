@@ -1316,6 +1316,9 @@
         function updateNetworkViz() {
             if(!g) return;
             const container = document.getElementById('network-svg').parentElement;
+            const w = container.clientWidth, h = container.clientHeight;
+            if (simulation && w > 0 && h > 0) simulation.force("center", d3.forceCenter(w / 2, h / 2));
+
             const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
             const links = []; 
             simulationState.nodes.forEach(n => { 
