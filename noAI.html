@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Cryptocurrency Demo</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.run/@google/genai"
+      }
+    }
+    </script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfd; color: #1e293b; overflow: hidden; height: 100vh; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        .tab-content { display: none; height: calc(100vh - 280px); }
+        .tab-content.active { display: flex; flex-direction: column; }
+        
+        .fixed-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 100; }
+        .fixed-overlay.open { opacity: 1; pointer-events: auto; }
+        #details-overlay { justify-content: flex-end; }
+        #details-content { width: 100%; max-width: 550px; height: 100%; background: white; box-shadow: -10px 0 30px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
+        #details-overlay.open #details-content { transform: translateX(0); }
+
+        .btn-box { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; border: 2px solid transparent; }
+        .btn-active { background-color: #4f46e5; color: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); cursor: pointer; }
+        .btn-inactive { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; opacity: 0.5; }
+        
+        .tab-btn { padding-top: 1rem; padding-bottom: 1rem; font-size: 0.875rem; font-weight: 700; border-bottom: 4px solid transparent; color: #94a3b8; transition: all 0.2s; }
+        .tab-btn.active { border-bottom-color: #4f46e5; color: #4f46e5; }
+
+        .card { background-color: white; border: 2px solid #e2e8f0; border-radius: 1rem; padding: 1rem; transition: all 0.2s; width: 12rem; flex-shrink: 0; cursor: pointer; position: relative; }
+        .card:hover { border-color: #4f46e5; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+
+        .chain-local { border-color: #3b82f6 !important; background-color: #eff6ff !important; }
+        .chain-remote { border-color: #f59e0b !important; background-color: #fffbeb !important; }
+        .chain-mortgaged { border-color: #94a3b8 !important; border-style: dashed !important; opacity: 0.6; filter: grayscale(1); }
+
+        #network-svg { width: 100%; height: 100%; background: #fff; }
+        .node { stroke: #fff; stroke-width: 3px; cursor: pointer; transition: fill 0.3s; }
+        .link { stroke: #cbd5e1; stroke-opacity: 0.6; stroke-width: 1.5px; }
+        
+        .chan-local { border-color: #4f46e5 !important; background-color: #f5f3ff !important; }
+        .chan-hybrid { border-color: #10b981 !important; background-color: #f0fdf4 !important; }
+        .chan-remote { border-color: #f59e0b !important; background-color: #fffbeb !important; }
+        
+        .participant-local { background-color: #4f46e5; color: white; padding: 0.1rem 0.3rem; border-radius: 0.25rem; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 p-8 z-30 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex justify-between items-start">
+            <div class="space-y-2">
+                <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership TestNet</p>
+                <h1 id="main-title" class="text-3xl font-black text-slate-900 tracking-tighter">先进加密货币示范网</h1>
+                <div id="status-line" class="text-sm text-slate-500 font-bold leading-relaxed flex flex-wrap items-center gap-3">
+                    <span id="instruction-text"></span>
+                    <div id="readiness-badges" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+            <div class="flex flex-col items-end gap-3">
+                <div id="mqtt-status" class="px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100">Broker: Connecting...</div>
+                <button onclick="window.toggleLanguage()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black rounded-full uppercase transition-colors">
+                    <span id="lang-toggle-text">English</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="max-w-7xl mx-auto mt-8 flex flex-wrap gap-4 items-center" id="action-buttons">
+            <!-- Buttons dynamically generated by updateStepUI -->
+        </div>
+    </header>
+
+    <nav class="bg-white border-b border-slate-100 px-8 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex gap-10">
+            <button onclick="window.switchTab('help')" id="tab-btn-help" class="tab-btn active flex items-center gap-2"><span data-t="tab_help">使用指南</span> <i data-lucide="help-circle" size="16"></i></button>
+            <button onclick="window.switchTab('nodes')" id="tab-btn-nodes" class="tab-btn flex items-center gap-2"><span data-t="tab_nodes">网络节点</span> <i data-lucide="server" size="16"></i></button>
+            <button onclick="window.switchTab('accounts')" id="tab-btn-accounts" class="tab-btn flex items-center gap-2"><span data-t="tab_accounts">账户</span> <i data-lucide="user-square" size="16"></i></button>
+            <button onclick="window.switchTab('chains')" id="tab-btn-chains" class="tab-btn flex items-center gap-2"><span data-t="tab_chains">区块链钞票</span> <i data-lucide="box" size="16"></i></button>
+            <button onclick="window.switchTab('channels')" id="tab-btn-channels" class="tab-btn flex items-center gap-2"><span data-t="tab_channels">快速通道</span> <i data-lucide="zap" size="16"></i></button>
+        </div>
+    </nav>
+
+    <main class="flex-grow bg-slate-50/50 relative overflow-hidden">
+        <div id="tab-help" class="tab-content active p-10 overflow-y-auto custom-scrollbar">
+            <!-- Content populated by script -->
+        </div>
+        <div id="tab-nodes" class="tab-content overflow-hidden">
+            <div class="flex-1 bg-white relative"><svg id="network-svg"></svg></div>
+        </div>
+        <div id="tab-accounts" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto">
+                <div id="account-grid-local" class="flex flex-wrap gap-6 mb-12"></div>
+                <div id="account-grid-remote" class="flex flex-wrap gap-6"></div>
+            </div>
+        </div>
+        <div id="tab-chains" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto"><div id="chain-grid" class="flex flex-wrap gap-6"></div></div>
+        </div>
+        <div id="tab-channels" class="tab-content p-10 overflow-y-auto custom-scrollbar">
+            <div class="max-w-7xl mx-auto"><div id="channel-grid" class="flex flex-wrap gap-6"></div></div>
+        </div>
+    </main>
+
+    <div id="details-overlay" class="fixed-overlay" onclick="if(event.target==this) window.closeOverlay()">
+        <div id="details-content" onclick="event.stopPropagation()">
+            <div class="p-10 border-b border-slate-100 flex justify-between items-center">
+                <h2 id="overlay-title" class="text-2xl font-black text-slate-900 uppercase">详情</h2>
+                <button onclick="window.closeOverlay()" class="p-3 hover:bg-slate-100 rounded-full"><i data-lucide="x"></i></button>
+            </div>
+            <div id="overlay-body" class="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-8 pb-20"></div>
+        </div>
+    </div>
+
+    <script>
+        const TRANSLATIONS = {
+            zh: {
+                title: "先进加密货币示范网",
+                lang_toggle: "English",
+                instruction_0: "点击第一个按钮创建 P2P 网络节点。",
+                instruction_4: "快速通道就绪，可通过通道进行快速支付。",
+                ready_prefix: "网络就绪级别: ",
+                ready_suffix: "。请继续下一步。",
+                btn_init_net: "建立网络",
+                btn_init_accounts: "创建账户",
+                btn_init_assets: "创建区块链钞票",
+                btn_init_channels: "创建快速通道",
+                tab_help: "使用指南",
+                tab_nodes: "网络节点",
+                tab_accounts: "账户",
+                tab_chains: "区块链钞票",
+                tab_channels: "快速通道",
+                overlay_details: "详情",
+                overlay_node: "节点控制台",
+                overlay_account_local: "本地账户控制台",
+                overlay_account_remote: "远端同步账户",
+                overlay_chain: "钞票详情",
+                overlay_channel: "快速通道详情",
+                node_peers: "邻节点",
+                node_accounts: "托管本地账户",
+                node_broadcast: "发送广播测试",
+                node_broadcast_placeholder: "输入测试报文...",
+                node_broadcast_btn: "广播",
+                node_logs: "节点广播历史",
+                no_logs: "暂无消息。",
+                no_accounts: "无",
+                acc_balance: "流动资产",
+                acc_create_channel: "创建快速通道",
+                acc_create_channel_btn: "签署并建立通道",
+                acc_chains: "所属钞票",
+                chain_status: "状态",
+                chain_pay: "签署支付",
+                chain_pay_btn: "签署并广播变更",
+                chain_history: "溯源历史",
+                chan_pay: "点对点支付",
+                chan_direct: "直接支付",
+                chan_cascade: "开启级联",
+                chan_cascade_builder: "原子级联构建器",
+                chan_cascade_exec: "签署并广播级联更新",
+                chan_hop: "跳",
+                chan_via: "经由通道",
+                chan_withdraw: "提取钞票",
+                chan_pool: "通道内钞票存池",
+                chan_pool_empty: "暂无钞票存入。",
+                chan_withdraw_btn: "提取到账户",
+                chan_pay_history: "支付历史",
+                status_mortgaged: "已抵押",
+                status_free: "可用",
+                log_sync: "[区块同步]",
+                log_test: "[发起测试]",
+                log_author: "作者",
+                log_content: "内容",
+                log_msg_id: "消息ID",
+                ready_net: "网络就绪",
+                ready_users: "用户账户就绪",
+                ready_assets: "钞票就绪",
+                ready_channels: "快速通道就绪",
+                broker_online: "Broker: 已连接",
+                broker_connecting: "Broker: 连接中...",
+                cascade_insufficient: "余额不足：路径中某段通道资金无法支撑此笔支付。",
+                help_content: `
+                    <div class="max-w-4xl mx-auto bg-white p-12 rounded-[3rem] shadow-xl space-y-10">
+                        <h2 class="text-3xl font-black text-slate-900 tracking-tighter">欢迎来到先进加密货币示范平台。</h2>
+                        <div class="space-y-8 text-slate-600 leading-relaxed font-bold">
+                            <div class="intro border-l-4 border-indigo-500 pl-6 py-2 bg-indigo-50/30 rounded-r-2xl">
+                                <p>这是一个真实运行的加密货币系统，也具备交互式教学功能。</p>
+                                <p>在此，使用者能构建基于原子物权链（ Atomic Ownership Blockchains，AOB）实现的，全面优于通行技术的区块链货币创新架构。</p>
+                            </div>
+                            
+                            <p>AOB 用微观的公域私有链构建货币系统，将每条区块链视为一张道具钞票，功能与纸钞票相似，通过变更钞票的归属记载用户资产的转移。</p>
+                            
+                            <section>
+                                <h3 class="text-xl font-black text-slate-900 mb-4">与通行技术相比有三方面优势：</h3>
+                                <ul class="list-decimal pl-5 space-y-2 font-bold">
+                                    <li>高于比特币的去中心化，支付无须矿工配合，达到无中心水平。</li>
+                                    <li>密码学水平的安全，不依赖经济学幻想，能直接对抗双花攻击。</li>
+                                    <li>无上限的性能和容量。</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h3 class="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                                    <span class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm">!</span>
+                                    使用者依次执行下面步骤：
+                                </h3>
+                                <ol class="list-none space-y-10">
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">1</div>
+                                        <p><strong>打开页面后，看右上角的联网标识</strong>，变为<span class="text-emerald-600">绿色</span>后表示 P2P 网络可用。</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">2</div>
+                                        <p><strong>点四个按钮中最左侧的“建立网络”</strong>，创建 30 个节点。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">这些节点虽然是在同一网页进程中创建，彼此并不能直接访问，而是各自连接到 P2P 网络，所有数据交换都通过 P2P 网络协议实现。如果同时在另一个浏览器上打开本网页并创建网络，两边的节点可以连接在一起。从网络图中可以看到，蓝色节点是本地的，黄色是远端的。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">点每个节点可以打开节点详情页。在详情页可以测试广播消息，广播后可在任一节点（包括远端节点）的详情页中看到消息的广播记录。</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">3</div>
+                                        <p><strong>点“创建账户”按钮</strong>，创建 10 个账户。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">每个账户各有公私密钥，关联三个节点。点账户可打开详情页。</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">4</div>
+                                        <p><strong>点“创建区块链”按钮</strong>，创建 100 条区块链，表示 100 张道具钞票，每种面值 20 张。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">点区块链可打开详情页。在详情页中可以看到区块链中的区块，选择另一个账户（可以是远端账户）并支付，可添加并广播一个支付区块，将此区块链钞票发送到目标账户。</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">5</div>
+                                        <p><strong>点“建立快速通道”按钮</strong>，可在相邻节点的每两个账户之间建立快速通道，并令每个通道中的两个账户各自向通道抵押部分区块链钞票。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">通道的两个账户可能都是本地的，都是远端的，或者有一个本地的。用三种颜色区分。</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">点快速通道可打开详情页。在详情页中可以将一个账户的余额之内的任意数值的金额支付给另一账户。类似闪电网络，这种支付方式无须广播到全网，比钞票式支付更加方便。也可通过级联通道将金额支付给无直接通道相连的账户。</p>
+                                    </li>
+                                </ol>
+                            </section>
+                        </div>
+                    </div>`
+            },
+            en: {
+                title: "Advanced Cryptocurrency TestNet",
+                lang_toggle: "中文",
+                instruction_0: "Click the first button to initialize the P2P network nodes.",
+                instruction_4: "Speedy channels ready. Quick payments available.",
+                ready_prefix: "Ready level: ",
+                ready_suffix: ". Please proceed to the next step.",
+                btn_init_net: "Create Network",
+                btn_init_accounts: "Create Accounts",
+                btn_init_assets: "Create Banknotes",
+                btn_init_channels: "Create Speedy Channels",
+                tab_help: "User Guide",
+                tab_nodes: "Nodes",
+                tab_accounts: "Accounts",
+                tab_chains: "Banknotes",
+                tab_channels: "Channels",
+                overlay_details: "Details",
+                overlay_node: "Node Console",
+                overlay_account_local: "Local Account Console",
+                overlay_account_remote: "Remote Account",
+                overlay_chain: "Banknote Details",
+                overlay_channel: "Channel Details",
+                node_peers: "Peers",
+                node_accounts: "Hosted Local Accounts",
+                node_broadcast: "Broadcast Test",
+                node_broadcast_placeholder: "Enter test message...",
+                node_broadcast_btn: "Broadcast",
+                node_logs: "Node Broadcast History",
+                no_logs: "No messages yet.",
+                no_accounts: "None",
+                acc_balance: "Liquidity",
+                acc_create_channel: "Create Speedy Channel",
+                acc_create_channel_btn: "Sign & Establish Channel",
+                acc_chains: "Owned Banknotes",
+                chain_status: "Status",
+                chain_pay: "Sign Payment",
+                chain_pay_btn: "Sign & Broadcast",
+                chain_history: "Provenance History",
+                chan_pay: "Peer-to-Peer Pay",
+                chan_direct: "Direct Pay",
+                chan_cascade: "Enable Cascade",
+                chan_cascade_builder: "Atomic Cascade Builder",
+                chan_cascade_exec: "Sign & Broadcast Cascade",
+                chan_hop: "Hop",
+                chan_via: "via Channel",
+                chan_withdraw: "Withdraw Banknote",
+                chan_pool: "Banknote Pool",
+                chan_pool_empty: "No banknotes in pool.",
+                chan_withdraw_btn: "Withdraw to Acc",
+                chan_pay_history: "Payment History",
+                status_mortgaged: "Mortgaged",
+                status_free: "Free",
+                log_sync: "[Block Sync]",
+                log_test: "[Test Broadcast]",
+                log_author: "Author",
+                log_content: "Content",
+                log_msg_id: "Message ID",
+                ready_net: "Network Ready",
+                ready_users: "Accounts Ready",
+                ready_assets: "Banknotes Ready",
+                ready_channels: "Channels Ready",
+                broker_online: "Broker: Connected",
+                broker_connecting: "Broker: Connecting...",
+                cascade_insufficient: "Insufficient balance: A segment in the path cannot cover this payment.",
+                help_content: `
+                    <div class="max-w-4xl mx-auto bg-white p-12 rounded-[3rem] shadow-xl space-y-10">
+                        <h2 class="text-3xl font-black text-slate-900 tracking-tighter">Welcome to the Advanced Cryptocurrency Demonstration Platform.</h2>
+                        <div class="space-y-8 text-slate-600 leading-relaxed font-bold">
+                            <div class="intro border-l-4 border-indigo-500 pl-6 py-2 bg-indigo-50/30 rounded-r-2xl">
+                                <p>This is a real-running cryptocurrency system that also features interactive educational capabilities.</p>
+                                <p>Here, users can build an innovative blockchain currency architecture based on Atomic Ownership Blockchains (AOB), which is fully superior to conventional technologies.</p>
+                            </div>
+                            
+                            <p>AOB constructs a currency system using microscopic public-domain private chains, treating each blockchain as a prop banknote. Its function is similar to paper currency, recording the transfer of user assets by changing the ownership of the banknotes.</p>
+                            
+                            <section>
+                                <h3 class="text-xl font-black text-slate-900 mb-4">It has three main advantages over conventional technology:</h3>
+                                <ul class="list-decimal pl-5 space-y-2 font-bold">
+                                    <li>Higher decentralization than Bitcoin; payments do not require miner cooperation, achieving a centerless level.</li>
+                                    <li>Cryptographic-level security; it does not rely on economic fantasies and can directly counter double-spending attacks.</li>
+                                    <li>Unlimited performance and capacity.</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h3 class="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                                    <span class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm">!</span>
+                                    Users execute the following steps in sequence:
+                                </h3>
+                                <ol class="list-none space-y-10">
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">1</div>
+                                        <p><strong>After opening the page, check the network icon in the top right corner.</strong> When it turns <span class="text-emerald-600">green</span>, the P2P network is available.</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">2</div>
+                                        <p><strong>Click the leftmost button, 'Create Network',</strong> to create 30 nodes.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">Although these nodes are created within the same browser process, they cannot access each other directly. Instead, they each connect to the P2P network, and all data exchange is implemented through P2P network protocols. If the same webpage is opened in another browser and a network is created, the nodes on both sides can connect. In the network graph, blue nodes are local and yellow are remote.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">Clicking each node opens the node detail page. On the detail page, you can test broadcast messages. After broadcasting, you can see the message record on any node's detail page (including remote nodes).</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">3</div>
+                                        <p><strong>Click the 'Create Accounts' button</strong> to create 10 accounts.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">Each account has a public and private key pair and is associated with three nodes. Clicking an account opens the detail page.</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">4</div>
+                                        <p><strong>Click the 'Create Blockchain' button</strong> to create 100 blockchains, representing 100 prop banknotes, with 20 banknotes for each denomination.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">Clicking a blockchain opens the detail page. Inside, you can see the blocks within the blockchain. Select another account (can be a remote account) and pay to add and broadcast a payment block, sending this banknote to the target account.</p>
+                                    </li>
+                                    <li class="relative pl-10">
+                                        <div class="absolute left-0 top-1 w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-xs font-black">5</div>
+                                        <p><strong>Click the 'Create Speedy Channels' button</strong> to establish speedy channels between every two accounts on adjacent nodes, and have each of the two accounts in the channel mortgage some banknotes to the channel.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">A channel's two accounts could be local, remote, or one local. They are distinguished by three colors.</p>
+                                        <p class="text-sm mt-2 opacity-80 font-normal">Clicking a speedy channel opens the detail page. Inside, you can pay any amount within an account's balance to the other account. Similar to the Lightning Network, this payment method does not need to be broadcast to the entire network, making it more convenient than banknote-style payments. You can also pay accounts not directly connected through channel cascades.</p>
+                                    </li>
+                                </ol>
+                            </section>
+                        </div>
+                    </div>`
+            }
+        };
+
+        // Precision Helpers
+        const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+        const r0 = (n) => Math.round(n);
+
+        var currentLang = localStorage.getItem('aob_lang') || 'zh';
+        var mqttClient;
+        var superUser = null;
+        var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4).toUpperCase();
+        localStorage.setItem('aob_instance_id', appInstanceId);
+
+        var cascadeSession = { active: false, path: [], initiatorIdx: 0 }; 
+        var currentOpenedChannelId = null;
+
+        var simulationState = { 
+            nodes: [], users: [], remoteUsers: [], 
+            chains: [], speedyChannels: [], step: 0,
+            processedIds: new Set(),
+            pendingMortgages: [],
+            activeAmount: 10.00,
+            readyFlags: [], 
+            instanceId: appInstanceId
+        };
+
+        // Track D3 Nodes and Links to maintain physical state
+        let vizNodes = [];
+        let vizLinks = [];
+
+        const CONFIG = {
+            NODE_COUNT: 30, ACCOUNT_COUNT: 10, BANKNOTE_COUNT: 100,
+            MQTT_BROKER: 'ws://test.mosquitto.org:8080', 
+            TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
+            DEFINITION_TEXT: "This is the CBDC of Dorothea. Define each blockchain as a prop bill, with the data structure of its genesis block as: H\\nS\\nK, where: H is the SHA256 hash of this document (Base64); K is the public key of the system user (Base64), fixed at [SysPubKey]; S is the serial number, with the following correspondence to the banknote's denomination:\\n1-20 1\\n21-40 5\\n41-60 10\\n61-80 20\\n81-100 50"
+        };
+
+        function getLocal(key) { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; }
+        function setLocal(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
+        function t(key) { return TRANSLATIONS[currentLang][key] || key; }
+
+        window.toggleLanguage = function() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('aob_lang', currentLang);
+            updateLanguageContent();
+            updateStepUI();
+            renderAll();
+        };
+
+        function updateLanguageContent() {
+            const helpTab = document.getElementById('tab-help');
+            if (helpTab) helpTab.innerHTML = t('help_content');
+            document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+            const titleEl = document.getElementById('main-title');
+            if (titleEl) titleEl.innerText = t('title');
+            const langToggleEl = document.getElementById('lang-toggle-text');
+            if (langToggleEl) langToggleEl.innerText = t('lang_toggle');
+            const s = document.getElementById('mqtt-status');
+            if (s && mqttClient) {
+                s.innerText = mqttClient.connected ? t('broker_online') : t('broker_connecting');
+                s.className = mqttClient.connected ? "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100" : "px-4 py-2 bg-amber-50 text-amber-600 text-[10px] font-black rounded-full uppercase border border-amber-100";
+            }
+            document.querySelectorAll('[data-t]').forEach(el => el.innerText = t(el.getAttribute('data-t')));
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function saveFullState() {
+            const data = {
+                nodes: simulationState.nodes.filter(n => n.instance === appInstanceId).map(n => ({ ...n, ledger: undefined, seenIds: undefined, logs: n.logs.slice(0, 50) })),
+                users: await Promise.all(simulationState.users.map(async u => {
+                    const jwk = await crypto.subtle.exportKey("jwk", u.keyPair.privateKey);
+                    return { ...u, jwk, keyPair: undefined };
+                })),
+                chains: simulationState.chains,
+                speedyChannels: simulationState.speedyChannels,
+                superUserJwk: superUser ? await crypto.subtle.exportKey("jwk", superUser.keyPair.privateKey) : null,
+                superUserPub: simulationState.superUserPub,
+                step: simulationState.step,
+                readyFlags: simulationState.readyFlags,
+                instanceId: simulationState.instanceId
+            };
+            setLocal('aob_lab_v13', data);
+        }
+
+        async function getHash(text) { const hb = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)); return btoa(String.fromCharCode(...new Uint8Array(hb))); }
+        async function generateKeyPair() { const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]); const rp = await crypto.subtle.exportKey("raw", kp.publicKey); const p = btoa(String.fromCharCode(...new Uint8Array(rp))); return { pub: p, fp: p.slice(0, 8), keyPair: kp }; }
+        async function signData(d, pk) { const s = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, pk, new TextEncoder().encode(d)); return btoa(String.fromCharCode(...new Uint8Array(s))); }
+
+        function startDiscovery() {
+            if (simulationState.step >= 1) {
+                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
+                if (locals.length > 0) {
+                    const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 3);
+                    subset.forEach(n => {
+                        mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ 
+                            type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors 
+                        }));
+                    });
+                }
+            }
+        }
+
+        window.initNetwork = async function() {
+            const saved = getLocal('aob_lab_v13');
+            if (saved && saved.nodes && saved.nodes.length > 0) {
+                simulationState.nodes = saved.nodes.map(n => ({ ...n, ledger: {}, seenIds: new Set(), logs: n.logs || [] }));
+                simulationState.instanceId = saved.instanceId;
+            } else {
+                const locals = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
+                    id: `NODE-${appInstanceId}-${i}`, instance: appInstanceId, neighbors: [], logs: [], seenIds: new Set(), ledger: {}
+                }));
+                locals.forEach(n => {
+                    while (n.neighbors.length < 4) {
+                        const t_node = locals[Math.floor(Math.random() * locals.length)];
+                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id) && t_node.neighbors.length < 7) {
+                            n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
+                        }
+                        if (locals.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
+                    }
+                });
+                simulationState.nodes = locals;
+            }
+            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/${n.id}`));
+            initNetworkViz();
+            simulationState.readyFlags = [t('ready_net')];
+            simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
+            startDiscovery();
+            await saveFullState();
+        };
+
+        window.initAccounts = async function() {
+            const saved = getLocal('aob_lab_v13');
+            simulationState.remoteUsers = []; 
+            if (saved && saved.users && saved.users.length > 0) {
+                simulationState.superUserPub = saved.superUserPub;
+                const spriv = await crypto.subtle.importKey("jwk", saved.superUserJwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+                superUser = { pub: saved.superUserPub, keyPair: { privateKey: spriv } };
+                simulationState.users = await Promise.all(saved.users.map(async u => {
+                    const priv = await crypto.subtle.importKey("jwk", u.jwk, { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+                    const pubKeyBytes = new Uint8Array(atob(u.pub).split("").map(c => c.charCodeAt(0)));
+                    const pub = await crypto.subtle.importKey("raw", pubKeyBytes, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
+                    return { ...u, keyPair: { privateKey: priv, publicKey: pub } };
+                }));
+            } else {
+                superUser = await generateKeyPair(); simulationState.superUserPub = superUser.pub;
+                for (let i = 0; i < CONFIG.ACCOUNT_COUNT; i++) {
+                    const kp = await generateKeyPair(); 
+                    kp.nodes = [simulationState.nodes[i % CONFIG.NODE_COUNT].id, simulationState.nodes[(i + 5) % CONFIG.NODE_COUNT].id, simulationState.nodes[(i + 10) % CONFIG.NODE_COUNT].id];
+                    simulationState.users.push(kp);
+                }
+            }
+            simulationState.readyFlags.push(t('ready_users'));
+            simulationState.step = 2; updateStepUI(); window.switchTab('accounts');
+            await saveFullState();
+        };
+
+        window.initBanknotes = async function() {
+            const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
+            const h = await getHash(filledDef);
+            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                const gData = `${h}\\n${s}\\n${superUser.pub}`; 
+                const gId = await getHash(gData);
+                const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
+                const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
+                const ts = Date.now();
+                const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
+                const sig = await signData(payData, superUser.keyPair.privateKey);
+                const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
+                await updateGlobalState(genesis); await updateGlobalState(payment);
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
+            }
+            simulationState.readyFlags.push(t('ready_assets'));
+            simulationState.step = 3; updateStepUI(); window.switchTab('chains');
+            await saveFullState();
+        };
+
+        window.initChannels = async function() {
+            const users = simulationState.users;
+            const remotes = simulationState.remoteUsers;
+            for (let round = 0; round < 20; round++) {
+                for (let i = 0; i < users.length; i++) {
+                    let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
+                    if (curCount >= 4) continue;
+                    let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
+                    pool.sort(() => Math.random() - 0.5);
+                    for (let targetPub of pool) {
+                        const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
+                        const sorted = [users[i].pub, targetPub].sort();
+                        if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
+                            await createAndBroadcastChannel(users[i], u2);
+                            if (++curCount >= 4) break;
+                        }
+                    }
+                }
+            }
+            simulationState.readyFlags.push(t('ready_channels'));
+            simulationState.step = 4; updateStepUI(); window.switchTab('channels');
+            await saveFullState();
+        };
+
+        async function createAndBroadcastChannel(u1, u2) {
+            const sorted = [u1.pub, u2.pub].sort();
+            const rootData = `Speedy Channel\\n${Date.now()}\\n${sorted[0]}\\n${u1.nodes ? u1.nodes[0] : 'UNK'}\\n${sorted[1]}\\n${u2.nodes ? u2.nodes[0] : 'UNK'}`;
+            const cId = await getHash(rootData); 
+            if (!simulationState.speedyChannels.find(x => x.id === cId)) {
+                const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
+                await updateGlobalState(block);
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                // FIX: Removed explicit mortgage logic here to prevent doubling. 
+                // All mortgages are now reactive in updateGlobalState(rootBlock).
+            }
+            return cId;
+        }
+
+        async function updateGlobalState(block) {
+            if (simulationState.processedIds.has(block.id)) return;
+            simulationState.processedIds.add(block.id);
+            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
+                n.seenIds.add(block.id);
+                const entry = `${t('log_sync')} Type:${block.type}\\nID:${block.id.slice(0,16)}...\\n${t('log_author')}:${block.author.slice(0,8)}...\\n${t('log_content')}: ${block.data}`;
+                n.logs.unshift({ time: new Date().toLocaleTimeString(), type: block.type, data: entry });
+                if(n.logs.length > 50) n.logs.pop();
+            });
+
+            const isPotentialAccount = (str) => str && str.length > 60;
+            const addUserIfRemote = (pub) => {
+                if (isPotentialAccount(pub) && !simulationState.users.find(u => u.pub === pub) && !simulationState.remoteUsers.includes(pub)) {
+                    simulationState.remoteUsers.push(pub);
+                }
+            };
+
+            addUserIfRemote(block.author);
+            if (block.type === 'PAYMENT') addUserIfRemote(block.target);
+
+            let c = simulationState.chains.find(x => x.genesisId === block.chainRootId);
+            if (block.type === 'GENESIS' && !c) {
+                const parts = block.data.split('\\n'); const s = +parts[1]; 
+                let d = s > 80 ? 50 : s > 60 ? 20 : s > 40 ? 10 : s > 20 ? 5 : 1;
+                c = { serial: s, denomination: r0(d), genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
+                simulationState.chains.push(c);
+            } else if (c) {
+                if (!c.blocks.find(b => b.id === block.id)) {
+                    c.blocks.push(block);
+                    if (block.type === 'PAYMENT') { c.currentOwner = block.target; c.status = 'FREE'; }
+                    else if (block.type === 'MORTGAGE') {
+                        c.status = 'MORTGAGED'; c.currentOwner = block.target;
+                        const ch = simulationState.speedyChannels.find(x=>x.id===block.target);
+                        if(ch) {
+                            const p = ch.participants.find(p=>p.pub===block.author);
+                            if(p) p.balance = r2(p.balance + c.denomination);
+                        } else { simulationState.pendingMortgages.push({ target: block.target, author: block.author, value: c.denomination, genesisId: c.genesisId }); }
+                    }
+                }
+            }
+            if (block.type === 'SPEEDY_CHANNEL_ROOT' && !simulationState.speedyChannels.find(x => x.id === block.id)) {
+                const l = block.data.split('\\n');
+                const chanId = block.id;
+                const chan = { id: chanId, participants: [{pub:l[2], fp:l[2].slice(0,8), balance:0.00, node:l[3]}, {pub:l[4], fp:l[4].slice(0,8), balance:0.00, node:l[5]}], history: [] };
+                simulationState.speedyChannels.push(chan);
+                addUserIfRemote(l[2]); addUserIfRemote(l[4]);
+                
+                // Reactive Auto-mortgage logic for any local participant detected in a new channel root
+                chan.participants.forEach(async p => {
+                    const localMe = simulationState.users.find(u => u.pub === p.pub);
+                    if (localMe) {
+                        const hasAlreadyMortgaged = simulationState.chains.some(asset => asset.currentOwner === chanId && asset.blocks.some(b => b.author === p.pub));
+                        if (!hasAlreadyMortgaged) {
+                            const myAssets = simulationState.chains.filter(asset => asset.currentOwner === p.pub && asset.status === 'FREE').sort((a,b) => b.denomination - a.denomination);
+                            if (myAssets[0]) {
+                                const mData = `PREV:${myAssets[0].blocks[myAssets[0].blocks.length-1].id}\\nTYPE:MORTGAGE\\nTARGET:${chanId}\\nTS:${Date.now()}`;
+                                const sig = await signData(mData, localMe.keyPair.privateKey);
+                                const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: p.pub, target: chanId, chainRootId: myAssets[0].genesisId, sig };
+                                await updateGlobalState(mBlock);
+                                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
+                            }
+                        }
+                    }
+                });
+
+                simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
+                    if (pm.target === block.id) {
+                        const p = chan.participants.find(p => p.pub === pm.author); if (p) p.balance = r2(p.balance + pm.value);
+                        const chain = simulationState.chains.find(x => x.genesisId === pm.genesisId); if (chain) chain.currentOwner = block.id;
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            window.renderAll();
+        }
+
+        function handleIncomingRelay(msg) {
+            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
+                if (!n.seenIds.has(msg.mId)) {
+                    if (n.neighbors.includes(msg.fromNode) || msg.originator === n.id) {
+                        n.seenIds.add(msg.mId);
+                        const logEntry = `[${msg.type}] From:${msg.originator}\\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\\n${t('log_msg_id')}: ${msg.mId}`;
+                        n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
+                        if(n.logs.length > 50) n.logs.pop();
+                        if (msg.hop < 4) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
+                    }
+                }
+            });
+        }
+
+        function relayToNeighbors(node, payload) {
+            node.neighbors.forEach(nbId => {
+                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
+            });
+        }
+
+        window.switchTab = function(id) {
+            document.querySelectorAll('.tab-content').forEach(t_el => t_el.classList.remove('active'));
+            const target = document.getElementById(`tab-${id}`);
+            if (target) target.classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(b => { 
+                b.classList.remove('active'); 
+                if(b.id === `tab-btn-${id}`) b.classList.add('active'); 
+            });
+            if(id === 'nodes' && simulation) updateNetworkViz();
+            window.renderAll();
+        };
+
+        window.renderAll = function() {
+            const lGrid = document.getElementById('account-grid-local'); if(lGrid) {
+                lGrid.innerHTML = '';
+                simulationState.users.forEach(u => {
+                    const bal = r0(simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE').reduce((s,c)=>s+c.denomination, 0));
+                    const el = document.createElement('div'); el.className = 'card flex flex-col items-center gap-3 shadow-sm';
+                    el.onclick = () => window.openAccountOverlay(u.pub);
+                    el.innerHTML = `<div class="p-3 bg-indigo-50 rounded-full text-indigo-600"><i data-lucide="user"></i></div><div class="text-sm font-black text-slate-800">$${bal}</div><div class="text-[9px] mono text-slate-400 font-bold" title="${u.pub}">${u.fp}</div>`;
+                    lGrid.appendChild(el);
+                });
+            }
+            const rGrid = document.getElementById('account-grid-remote'); if(rGrid) {
+                rGrid.innerHTML = '';
+                simulationState.remoteUsers.forEach(pub => {
+                    const el = document.createElement('div'); el.className = 'card flex flex-col items-center gap-3 opacity-60 grayscale scale-95';
+                    el.onclick = () => window.openAccountOverlay(pub);
+                    el.innerHTML = `<div class="p-3 bg-slate-100 rounded-full text-slate-400"><i data-lucide="user"></i></div><div class="text-[10px] font-bold text-slate-500 uppercase">Remote</div><div class="text-[9px] mono text-slate-300 font-bold" title="${pub}">${pub.slice(0,8)}</div>`;
+                    rGrid.appendChild(el);
+                });
+            }
+            const cGrid = document.getElementById('chain-grid'); if(cGrid) {
+                cGrid.innerHTML = '';
+                simulationState.chains.forEach(c => {
+                    const isLocal = simulationState.users.some(u => u.pub === c.currentOwner);
+                    const el = document.createElement('div');
+                    let stateClass = c.status === 'MORTGAGED' ? "chain-mortgaged" : (isLocal ? "chain-local" : "chain-remote");
+                    el.className = `card text-center ${stateClass}`;
+                    el.onclick = () => window.openChainOverlay(c.genesisId);
+                    el.innerHTML = `<div class="text-xl font-black chain-val">$${r0(c.denomination)}</div><div class="text-[9px] mono text-slate-500 font-bold mt-1 uppercase" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div>`;
+                    cGrid.appendChild(el);
+                });
+            }
+            const chGrid = document.getElementById('channel-grid'); if(chGrid) {
+                chGrid.innerHTML = '';
+                simulationState.speedyChannels.forEach(c => {
+                    const isLocal1 = simulationState.users.some(u => u.pub === c.participants[0].pub);
+                    const isLocal2 = simulationState.users.some(u => u.pub === c.participants[1].pub);
+                    let typeClass = (isLocal1 && isLocal2) ? "chan-local" : (isLocal1 || isLocal2) ? "chan-hybrid" : "chan-remote";
+                    let typeLabel = (isLocal1 && isLocal2) ? "LOCAL" : (isLocal1 || isLocal2) ? "HYBRID" : "REMOTE";
+                    
+                    const el = document.createElement('div'); el.className = `card ${typeClass}`;
+                    el.onclick = () => window.openChannelOverlay(c.id);
+                    el.innerHTML = `<div class="text-[9px] font-black mb-2 uppercase opacity-70">${typeLabel} CHANNEL</div><div class="flex justify-between items-center text-xs"><div class="text-center font-bold"><div>$${c.participants[0].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal1?'participant-local':''}" title="${c.participants[0].pub}">${c.participants[0].fp}</div></div><i data-lucide="zap" class="opacity-40" size="14"></i><div class="text-center font-bold"><div>$${c.participants[1].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal2?'participant-local':''}" title="${c.participants[1].pub}">${c.participants[1].fp}</div></div></div><div class="text-[8px] mono opacity-40 mt-3 pt-2 border-t border-slate-100 truncate" title="${c.id}">ID: ${c.id.slice(0,16)}...</div>`;
+                    chGrid.appendChild(el);
+                });
+            }
+            if(window.lucide) lucide.createIcons();
+            const badgeContainer = document.getElementById('readiness-badges');
+            if (badgeContainer) badgeContainer.innerHTML = simulationState.readyFlags.map(f => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] uppercase font-black tracking-widest border border-indigo-100">${f}</span>`).join('');
+        };
+
+        window.openNodeOverlay = function(id) {
+            const n = simulationState.nodes.find(x => x.id === id); if(!n) return;
+            const boundUsers = simulationState.users.filter(u => u.nodes && u.nodes.includes(id));
+            window.openOverlay(`${t('overlay_node')}: ${id}`);
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-6 bg-slate-900 rounded-[2rem] text-white shadow-xl border-4 border-indigo-900/30">
+                        <div class="text-[10px] uppercase font-black tracking-widest text-indigo-400 mb-3">${t('node_accounts')} (${boundUsers.length})</div>
+                        <div class="space-y-2 mb-4">
+                            ${boundUsers.map(u => `<button onclick="window.openAccountOverlay('${u.pub}')" class="w-full text-left text-[9px] mono bg-indigo-500/10 px-3 py-2 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/30 flex justify-between items-center"><span>${u.fp}...</span></button>`).join('') || `<div class="text-xs italic text-slate-500">${t('no_accounts')}</div>`}
+                        </div>
+                        <div class="text-[10px] uppercase font-black tracking-widest text-indigo-400 mb-3">${t('node_peers')} (${n.neighbors.length})</div>
+                        <div class="flex flex-wrap gap-2">${n.neighbors.map(nb => `<button onclick="window.openNodeOverlay('${nb}')" class="text-[9px] mono bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-indigo-500 transition-colors">${nb}</button>`).join('') || `<div class="text-xs italic text-slate-500">${t('no_accounts')}</div>`}</div>
+                    </div>
+                    <div class="p-8 bg-indigo-50 border-2 border-indigo-100 rounded-[2rem] space-y-4 shadow-inner">
+                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-2"><i data-lucide="radio" size="14"></i> ${t('node_broadcast')}</h4>
+                        <div class="flex gap-2"><input id="node-test-input" type="text" placeholder="${t('node_broadcast_placeholder')}" class="flex-1 bg-white p-3 rounded-xl text-xs font-bold outline-none ring-1 ring-slate-200"><button onclick="window.broadcastTest('${id}')" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-md">${t('node_broadcast_btn')}</button></div>
+                    </div>
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('node_logs')}</h4>
+                        <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">${n.logs.map(l => `<div class="p-4 border bg-white rounded-2xl flex flex-col gap-1 shadow-sm"><div class="flex justify-between items-center"><span class="text-[8px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">${l.type}</span><span class="text-[8px] font-bold text-slate-400 mono">${l.time}</span></div><div class="text-[10px] font-bold text-slate-700 break-all leading-relaxed whitespace-pre-wrap">${l.data}</div></div>`).join('') || `<div class="text-xs text-slate-300 italic text-center py-8">${t('no_logs')}</div>`}</div>
+                    </div>
+                </div>`;
+            if(window.lucide) lucide.createIcons();
+        };
+
+        window.broadcastTest = (nid) => {
+            const input = document.getElementById('node-test-input'); if(!input.value) return;
+            const node = simulationState.nodes.find(x => x.id === nid);
+            const mId = Math.random().toString(36).substr(2, 9);
+            relayToNeighbors(node, { type: 'BROADCAST_TEST', content: input.value, originator: nid, mId });
+            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\\n${t('log_content')}: ${input.value}\\n${t('log_msg_id')}: ${mId}` });
+            input.value = ''; setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
+        };
+
+        window.openAccountOverlay = function(pub) {
+            const isLocal = simulationState.users.some(u => u.pub === pub);
+            const ownedChains = simulationState.chains.filter(c => c.currentOwner === pub);
+            const others = [...simulationState.users.filter(u=>u.pub!==pub).map(u=>u.pub), ...simulationState.remoteUsers.filter(u=>u!==pub)];
+            window.openOverlay(isLocal ? t('overlay_account_local') : t('overlay_account_remote'));
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-10 ${isLocal?'bg-indigo-600':'bg-slate-600'} text-white rounded-[2.5rem] text-center shadow-xl">
+                        <div class="text-[10px] opacity-60 font-black tracking-widest mb-2 uppercase">${t('acc_balance')}</div>
+                        <div class="text-6xl font-black">$${ownedChains.filter(c=>c.status==='FREE').reduce((s,c)=>s+c.denomination,0)}</div>
+                        <div class="mt-6 text-[9px] mono opacity-60 break-all select-all font-bold" title="${pub}">${pub}</div>
+                    </div>
+                    ${isLocal ? `
+                    <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-4 shadow-sm">
+                        <h4 class="text-[10px] font-black uppercase text-indigo-600 tracking-widest">${t('acc_create_channel')}</h4>
+                        <div class="flex flex-col gap-3">
+                            <select id="manual-ch-target" class="w-full bg-slate-50 p-4 rounded-xl text-[10px] mono outline-none ring-1 ring-slate-200">
+                                ${others.map(t_pub => {
+                                    const isTargetLocal = simulationState.users.some(u=>u.pub===t_pub);
+                                    const prefix = isTargetLocal ? "(Local)" : "(Remote)";
+                                    return `<option value="${t_pub}">${prefix} ${t_pub.slice(0,16)}...</option>`;
+                                }).join('')}
+                            </select>
+                            <button onclick="window.execManualChannel('${pub}')" class="bg-indigo-600 text-white py-4 rounded-xl font-black text-xs uppercase shadow-md active:scale-95">${t('acc_create_channel_btn')}</button>
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('acc_chains')} (${ownedChains.length})</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold uppercase mt-1" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
+                        </div>
+                    </div>
+                </div>`;
+            if(window.lucide) lucide.createIcons();
+        };
+
+        window.execManualChannel = async function(localPub) {
+            const targetPub = document.getElementById('manual-ch-target').value;
+            const u1 = simulationState.users.find(u => u.pub === localPub);
+            const u2 = simulationState.users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
+            await createAndBroadcastChannel(u1, u2);
+            window.closeOverlay(); window.switchTab('channels'); await saveFullState();
+        };
+
+        window.openChainOverlay = function(id) {
+            const c = simulationState.chains.find(x => x.genesisId === id); if(!c) return;
+            const isLocal = simulationState.users.some(u => u.pub === c.currentOwner);
+            const others = [...simulationState.users.filter(u=>u.pub!==c.currentOwner).map(u=>u.pub), ...simulationState.remoteUsers.filter(u=>u!==c.currentOwner)];
+            window.openOverlay(`${t('overlay_chain')}: ${id.slice(0,12)}`);
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6">
+                    <div class="p-10 bg-emerald-50 border-4 border-emerald-100 rounded-[3rem] text-center">
+                        <div class="text-7xl font-black text-emerald-600">$${c.denomination}</div>
+                        <div class="text-[10px] font-black uppercase text-slate-400 mt-4 tracking-widest">${t('chain_status')}: ${c.status === 'FREE' ? t('status_free') : t('status_mortgaged')}</div>
+                    </div>
+                    ${isLocal && c.status === 'FREE' ? `
+                    <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-5 shadow-lg">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chain_pay')}</h4>
+                        <select id="pay-target-select" class="w-full bg-slate-50 p-4 rounded-xl text-[10px] mono outline-none ring-1 ring-slate-200">
+                            ${others.map(target_pub => {
+                                const isTargetLocal = simulationState.users.some(u => u.pub === target_pub);
+                                const prefix = isTargetLocal ? "(Local)" : "(Remote)";
+                                return `<option value="${target_pub}">${prefix} ${target_pub.slice(0,16)}...</option>`;
+                            }).join('')}
+                        </select>
+                        <button onclick="window.execPayment('${id}')" class="w-full bg-indigo-600 text-white py-5 rounded-xl font-black uppercase text-xs shadow-xl active:scale-95">${t('chain_pay_btn')}</button>
+                    </div>` : `<div class="p-10 text-center text-xs italic bg-slate-50 rounded-2xl">Read Only</div>`}
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chain_history')}</h4>
+                        <div class="space-y-2">
+                            ${c.blocks.map(b => `<div class="p-4 border bg-white rounded-2xl text-[10px] shadow-sm"><div class="flex justify-between font-black text-indigo-600 mb-1"><span>${b.type}</span><span class="mono" title="${b.id}">${b.id.slice(0,16)}...</span></div><div class="text-slate-500 mono break-all whitespace-pre-wrap">${b.data}</div></div>`).join('')}
+                        </div>
+                    </div>
+                </div>`;
+        };
+
+        window.execPayment = async function(chainId) {
+            const c = simulationState.chains.find(x => x.genesisId === chainId), target = document.getElementById('pay-target-select').value, owner = simulationState.users.find(u => u.pub === c.currentOwner);
+            const data = `PREV:${c.blocks[c.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${target}\\nTS:${Date.now()}`;
+            const sig = await signData(data, owner.keyPair.privateKey);
+            const block = { id: sig, type: 'PAYMENT', data, author: c.currentOwner, target, chainRootId: chainId, sig };
+            await updateGlobalState(block); mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            window.closeOverlay(); await saveFullState();
+        };
+
+        window.openChannelOverlay = function(id) { currentOpenedChannelId = id; cascadeSession = { active: false, path: [id], initiatorIdx: 0 }; window.refreshChannelUI(id); };
+        window.refreshChannelUI = function(id) {
+            const chan = simulationState.speedyChannels.find(x => x.id === id); if (!chan) return;
+            const p1 = chan.participants[0], p2 = chan.participants[1], isP1Local = simulationState.users.some(u => u.pub === p1.pub), isP2Local = simulationState.users.some(u => u.pub === p2.pub);
+            const mortgagedNotes = simulationState.chains.filter(c => c.currentOwner === id);
+            
+            window.openOverlay(t('overlay_channel'));
+            document.getElementById('overlay-body').innerHTML = `
+                <div class="space-y-6 pb-20">
+                    <div class="p-12 bg-slate-900 rounded-[3.5rem] flex justify-between items-center text-white shadow-2xl border-4 border-indigo-900/30">
+                        <div class="text-center flex-1">
+                            <div class="text-5xl font-black">$${p1.balance.toFixed(2)}</div>
+                            <div class="text-[9px] mono text-indigo-400 mt-2 font-bold ${isP1Local?'participant-local':''}" title="${p1.pub}">${p1.fp}</div>
+                        </div>
+                        <i data-lucide="zap" class="text-emerald-500 animate-pulse" size="40"></i>
+                        <div class="text-center flex-1">
+                            <div class="text-5xl font-black">$${p2.balance.toFixed(2)}</div>
+                            <div class="text-[9px] mono text-indigo-400 mt-2 font-bold ${isP2Local?'participant-local':''}" title="${p2.pub}">${p2.fp}</div>
+                        </div>
+                    </div>
+                    <div class="p-8 bg-white border-2 border-indigo-50 rounded-[2.5rem] space-y-6 shadow-lg">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pay')}</h4>
+                        <div class="flex gap-4">
+                            <select id="ch-sender" class="flex-1 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none">
+                                <option value="0" ${!isP1Local ? 'disabled' : ''}>${p1.fp}</option>
+                                <option value="1" ${!isP2Local ? 'disabled' : ''}>${p2.fp}</option>
+                            </select>
+                            <input id="ch-amt" type="number" step="any" oninput="simulationState.activeAmount = Number(this.value)" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none" value="${simulationState.activeAmount}">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="window.execChPay('${id}')" class="bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg">${t('chan_direct')}</button>
+                            <button onclick="window.startCascadeMode('${id}')" class="bg-indigo-50 text-indigo-600 py-4 rounded-xl font-black text-[10px] uppercase">${t('chan_cascade')}</button>
+                        </div>
+                    </div>
+                    <div id="cascade-builder" class="${cascadeSession.active ? '' : 'hidden'} p-8 bg-indigo-50 rounded-[2.5rem] shadow-inner border-2 border-indigo-100 space-y-4">
+                        <h4 class="text-[11px] font-black uppercase text-indigo-600 tracking-widest">${t('chan_cascade_builder')}</h4>
+                        <div id="cascade-steps" class="space-y-2"></div>
+                        <div id="cascade-next" class="pt-4 border-t border-indigo-100"></div>
+                        <button onclick="window.executeCascade()" class="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl mt-4">${t('chan_cascade_exec')}</button>
+                    </div>
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pay_history')}</h4>
+                        <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                            ${chan.history.length > 0 ? chan.history.slice().reverse().map(h => `
+                                <div class="p-3 border bg-white rounded-xl text-[10px] flex justify-between items-center shadow-sm">
+                                    <div class="flex items-center gap-2">
+                                        <span class="mono px-1.5 py-0.5 bg-indigo-50 rounded font-bold">${h.from}</span>
+                                        <i data-lucide="arrow-right" size="10" class="text-slate-300"></i>
+                                        <span class="mono px-1.5 py-0.5 bg-emerald-50 rounded font-bold">${h.to}</span>
+                                    </div>
+                                    <div class="font-black text-indigo-600">$${h.amount.toFixed(2)}</div>
+                                </div>
+                            `).join('') : `<div class="text-[10px] text-slate-300 italic text-center py-4">No transactions recorded</div>`}
+                        </div>
+                    </div>
+                    <div class="p-8 bg-white border-2 border-slate-50 rounded-[2.5rem] space-y-4">
+                        <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('chan_pool')}</h4>
+                        <div class="space-y-3">
+                            ${mortgagedNotes.length > 0 ? mortgagedNotes.map(n => `
+                                <div class="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
+                                    <div class="font-black text-slate-700">$${r0(n.denomination)} <span class="text-[8px] mono opacity-50 ml-2">ID:${n.genesisId.slice(0,8)}</span></div>
+                                    <button onclick="window.execWithdraw('${id}', '${n.genesisId}')" class="px-4 py-2 bg-indigo-100 text-indigo-600 rounded-lg text-[9px] font-black uppercase">${t('chan_withdraw_btn')}</button>
+                                </div>`).join('') : `<div class="text-xs text-slate-300 italic text-center py-4">${t('chan_pool_empty')}</div>`}
+                        </div>
+                    </div>
+                </div>`;
+            if(window.lucide) lucide.createIcons();
+            if(cascadeSession.active) window.updateCascadeList();
+        };
+
+        window.execWithdraw = async function(chanId, chainId) {
+            const chan = simulationState.speedyChannels.find(x => x.id === chanId);
+            const chain = simulationState.chains.find(x => x.genesisId === chainId);
+            const senderIdx = +document.getElementById('ch-sender').value;
+            const user = chan.participants[senderIdx];
+            const localUser = simulationState.users.find(u => u.pub === user.pub);
+            if (!localUser || user.balance < chain.denomination) return;
+
+            const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${user.pub}\\nTS:${Date.now()}`;
+            const sig = await signData(data, localUser.keyPair.privateKey);
+            const block = { id: sig, type: 'PAYMENT', data, author: chanId, target: user.pub, chainRootId: chainId, sig };
+            
+            user.balance = r2(user.balance - chain.denomination);
+            await updateGlobalState(block);
+            mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+            window.refreshChannelUI(chanId);
+            await saveFullState();
+        };
+
+        window.execChPay = async function(id) {
+            const c = simulationState.speedyChannels.find(x=>x.id===id), sIdx = +document.getElementById('ch-sender').value, amt = r2(Number(simulationState.activeAmount));
+            if (isNaN(amt) || amt <= 0 || c.participants[sIdx].balance < amt) return;
+            const sender = c.participants[sIdx], receiver = c.participants[sIdx === 0 ? 1 : 0];
+            sender.balance = r2(sender.balance - amt);
+            receiver.balance = r2(receiver.balance + amt);
+            c.history.push({ from: sender.fp, to: receiver.fp, amount: amt, time: Date.now() });
+            
+            const msgId = Math.random().toString(36).substr(2, 9);
+            simulationState.processedIds.add(msgId);
+            mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
+            window.refreshChannelUI(id); await saveFullState();
+        };
+
+        window.startCascadeMode = (id) => { cascadeSession.active = true; cascadeSession.initiatorIdx = +document.getElementById('ch-sender').value; cascadeSession.path = [id]; window.refreshChannelUI(id); };
+
+        window.updateCascadeList = () => {
+            const stepsEl = document.getElementById('cascade-steps'), nextEl = document.getElementById('cascade-next'); if(!stepsEl) return;
+            const initialChan = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]);
+            let curPub = initialChan.participants[cascadeSession.initiatorIdx].pub;
+            stepsEl.innerHTML = cascadeSession.path.map((cid, i) => {
+                const chan = simulationState.speedyChannels.find(x => x.id === cid), sender = chan.participants.find(p => p.pub === curPub), receiver = chan.participants.find(p => p.pub !== curPub);
+                curPub = receiver.pub;
+                return `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm"><div class="flex justify-between font-black text-indigo-600 uppercase"><span>${t('chan_hop')} #${i+1}</span><span class="mono">ID:${cid.slice(0,8)}</span></div><div class="flex items-center gap-2 mt-1"><span class="mono px-2 py-0.5 bg-indigo-50 rounded font-bold">${sender.fp}</span><i data-lucide="arrow-right" size="10" class="text-slate-300"></i><span class="mono px-2 py-0.5 bg-emerald-50 rounded font-bold">${receiver.fp}</span></div></div>`;
+            }).join('');
+            
+            const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === curPub));
+            nextEl.innerHTML = others.map(o => {
+                const isLocal1 = simulationState.users.some(u => u.pub === o.participants[0].pub);
+                const isLocal2 = simulationState.users.some(u => u.pub === o.participants[1].pub);
+                let typeClass = (isLocal1 && isLocal2) ? "chan-local" : (isLocal1 || isLocal2) ? "chan-hybrid" : "chan-remote";
+                let typeLabel = (isLocal1 && isLocal2) ? "Local" : (isLocal1 || isLocal2) ? "Hybrid" : "Remote";
+                
+                return `<button onclick="window.addCascadeHop('${o.id}')" class="w-full bg-white p-4 rounded-2xl text-[10px] text-indigo-700 text-left border-2 border-dashed border-indigo-200 hover:border-indigo-400 transition-all flex flex-col gap-2">
+                    <div class="flex justify-between items-center w-full">
+                        <span class="font-black">${t('chan_via')} ${o.id.slice(0,8)}</span>
+                        <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase ${typeClass.replace('chan-','bg-')} ${typeClass.replace('chan-','text-')} border opacity-80">${typeLabel}</span>
+                    </div>
+                    <div class="flex justify-between text-[8px] opacity-60 font-bold uppercase w-full border-t border-indigo-50 pt-1">
+                        <span>${o.participants[0].fp}: $${o.participants[0].balance.toFixed(2)}</span>
+                        <span>${o.participants[1].fp}: $${o.participants[1].balance.toFixed(2)}</span>
+                    </div>
+                </button>`;
+            }).join('') || `<div class="text-xs italic text-slate-400 py-4">No hops found</div>`;
+            if(window.lucide) lucide.createIcons();
+        };
+
+        window.addCascadeHop = (id) => { cascadeSession.path.push(id); window.updateCascadeList(); };
+        window.executeCascade = async () => {
+            const amt = r2(Number(simulationState.activeAmount)); if (isNaN(amt) || amt <= 0) return;
+            const initialChan = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]);
+            let curPub = initialChan.participants[cascadeSession.initiatorIdx].pub;
+            for (let cid of cascadeSession.path) {
+                const c = simulationState.speedyChannels.find(x => x.id === cid);
+                const sender = c.participants.find(p => p.pub === curPub);
+                if (sender.balance < amt) { alert(t('cascade_insufficient')); return; }
+                curPub = c.participants.find(p => p.pub !== curPub).pub;
+            }
+            curPub = initialChan.participants[cascadeSession.initiatorIdx].pub;
+            cascadeSession.path.forEach(cid => {
+                const c = simulationState.speedyChannels.find(x => x.id === cid);
+                const senderIdx = c.participants.findIndex(p => p.pub === curPub);
+                const sender = c.participants[senderIdx];
+                const receiver = c.participants[senderIdx === 0 ? 1 : 0];
+                sender.balance = r2(sender.balance - amt);
+                receiver.balance = r2(receiver.balance + amt);
+                c.history.push({ from: sender.fp, to: receiver.fp, amount: amt, time: Date.now(), cascade: true });
+                const msgId = Math.random().toString(36).substr(2, 9);
+                simulationState.processedIds.add(msgId);
+                mqttClient.publish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
+                curPub = receiver.pub;
+            });
+            cascadeSession.active = false; window.closeOverlay(); await saveFullState();
+        };
+
+        window.openOverlay = (t_str) => { document.getElementById('overlay-title').innerText = t_str; document.getElementById('details-overlay').classList.add('open'); };
+        window.closeOverlay = () => { currentOpenedChannelId = null; document.getElementById('details-overlay').classList.remove('open'); window.renderAll(); };
+        
+        let simulation, svg, g;
+        function initNetworkViz() {
+            svg = d3.select("#network-svg"); if(!svg.node()) return;
+            const container = svg.node().parentElement;
+            const w = container.clientWidth, h = container.clientHeight;
+            g = svg.append("g"); svg.call(d3.zoom().scaleExtent([0.1, 5]).on("zoom", (e) => g.attr("transform", e.transform)));
+            simulation = d3.forceSimulation().force("link", d3.forceLink().id(d => d.id).distance(150)).force("charge", d3.forceManyBody().strength(-400)).force("center", d3.forceCenter(w / 2, h / 2));
+            updateNetworkViz();
+        }
+        function updateNetworkViz() {
+            if(!g) return;
+            const container = document.getElementById('network-svg').parentElement;
+            const w = container.clientWidth, h = container.clientHeight;
+            const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
+            const links = []; 
+            simulationState.nodes.forEach(n => { 
+                n.neighbors.forEach(nbid => { 
+                    if (simulationState.nodes.some(x => x.id === nbid)) {
+                        // Avoid duplicates in visual links
+                        const linkId = [n.id, nbid].sort().join('-');
+                        if (!links.some(l => l.linkId === linkId)) {
+                            links.push({ source: n.id, target: nbid, linkId }); 
+                        }
+                    }
+                }); 
+            });
+            g.selectAll("*").remove();
+            const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
+            const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 12).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node shadow-lg").on("click", (e, d) => window.openNodeOverlay(d.id));
+            simulation.nodes(nodes); simulation.force("link").links(links); simulation.force("center", d3.forceCenter(w / 2, h / 2));
+            simulation.alpha(1).restart();
+            simulation.on("tick", () => { link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y); node.attr("cx", d => d.x).attr("cy", d => d.y); });
+        }
+
+        window.updateStepUI = function() {
+            const container = document.getElementById('action-buttons'); if (!container) return;
+            container.innerHTML = '';
+            const steps = [
+                { id: 'btn-init-net', index: 0, text: t('btn_init_net'), action: 'initNetwork()', icon: 'network' },
+                { id: 'btn-init-accounts', index: 1, text: t('btn_init_accounts'), action: 'initAccounts()', icon: 'users' },
+                { id: 'btn-init-assets', index: 2, text: t('btn_init_assets'), action: 'initBanknotes()', icon: 'banknote' },
+                { id: 'btn-init-channels', index: 3, text: t('btn_init_channels'), action: 'initChannels()', icon: 'zap' }
+            ];
+            steps.forEach(s => {
+                if (simulationState.step > s.index) return;
+                const btn = document.createElement('button');
+                btn.id = s.id; btn.onclick = new Function(s.action);
+                btn.className = `btn-box ${simulationState.step === s.index ? 'btn-active' : 'btn-inactive'}`;
+                btn.disabled = simulationState.step !== s.index;
+                btn.innerHTML = `<i data-lucide="${s.icon}" size="18"></i> ${s.text}`;
+                container.appendChild(btn);
+            });
+            const instr = document.getElementById('instruction-text');
+            if(simulationState.step === 0) instr.innerText = t('instruction_0');
+            else if(simulationState.step === 4) instr.innerText = t('instruction_4');
+            else instr.innerText = `${t('ready_prefix')}${simulationState.readyFlags.join(', ')}${t('ready_suffix')}`;
+            if(window.lucide) lucide.createIcons();
+        };
+
+        mqttClient = mqtt.connect(CONFIG.MQTT_BROKER, { clientId: 'aob_v25_' + appInstanceId, clean: true });
+        mqttClient.on('connect', () => { 
+            mqttClient.subscribe(CONFIG.TOPIC_MESH); mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY); 
+            const s = document.getElementById('mqtt-status');
+            if(s) {
+                s.innerText = t('broker_online');
+                s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
+            }
+            setInterval(startDiscovery, 10000);
+        });
+        mqttClient.on('message', (t_name, p) => {
+            try {
+                const d = JSON.parse(p.toString());
+                if (t_name === CONFIG.TOPIC_MESH) { if (d.relay) handleIncomingRelay(d.relay); else if (d.block) updateGlobalState(d.block); }
+                else if (t_name === CONFIG.TOPIC_DISCOVERY) {
+                    if (d.instance === appInstanceId) return;
+                    let rNode = simulationState.nodes.find(x => x.id === d.id);
+                    if (!rNode) { 
+                        rNode = { id: d.id, instance: d.instance, neighbors: d.neighbors || [], logs: [], seenIds: new Set(), ledger: {} }; 
+                        simulationState.nodes.push(rNode); 
+                        mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/${rNode.id}`); 
+                    } else if (d.neighbors) {
+                        d.neighbors.forEach(nb => { if(!rNode.neighbors.includes(nb)) rNode.neighbors.push(nb); });
+                    }
+
+                    if (d.type === 'HELLO') {
+                        const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
+                        if(locals[0]) {
+                            const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 2);
+                            subset.forEach(ln => {
+                                if(!ln.neighbors.includes(d.id)) { 
+                                    ln.neighbors.push(d.id); 
+                                    if(!rNode.neighbors.includes(ln.id)) rNode.neighbors.push(ln.id);
+                                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ 
+                                        type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors 
+                                    })); 
+                                }
+                            });
+                        }
+                    } else if (d.type === 'HELLO_BACK') {
+                        const ln = simulationState.nodes.find(n => n.id === d.targetId && n.instance === appInstanceId);
+                        if (ln && !ln.neighbors.includes(d.id)) {
+                             ln.neighbors.push(d.id);
+                             if (!rNode.neighbors.includes(ln.id)) rNode.neighbors.push(ln.id);
+                        }
+                    }
+                    if(simulation) updateNetworkViz();
+                } else if (t_name.startsWith(CONFIG.TOPIC_P2P)) {
+                    if (d.type === 'SPEEDY_CHANNEL_UPDATE') {
+                        const c = simulationState.speedyChannels.find(x => x.id === d.channelId);
+                        if (c && !simulationState.processedIds.has(d.msgId)) {
+                            simulationState.processedIds.add(d.msgId);
+                            const sIdx = c.participants.findIndex(p => p.pub === d.senderPub);
+                            if (sIdx !== -1) {
+                                const receiverIdx = sIdx === 0 ? 1 : 0;
+                                c.participants[sIdx].balance = r2(c.participants[sIdx].balance - d.amount);
+                                c.participants[receiverIdx].balance = r2(c.participants[receiverIdx].balance + d.amount);
+                                c.history.push({ from: c.participants[sIdx].fp, to: c.participants[receiverIdx].fp, amount: d.amount, time: Date.now() });
+                                window.renderAll(); if (currentOpenedChannelId === d.channelId) window.refreshChannelUI(d.channelId);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+        });
+
+        window.onload = function() { updateLanguageContent(); window.updateStepUI(); window.renderAll(); };
+    </script>
+</body>
+</html>
