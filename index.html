@@ -691,7 +691,7 @@
                 'ws://test.mosquitto.org:8080'
             ],
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
-            DEFINITION_TEXT: "Define AOB prop bill: H\\nS\\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
+            DEFINITION_TEXT: "Define AOB prop bill: H\nS\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
         };
 
         function multiPublish(topic, message) {
@@ -797,12 +797,12 @@
                 const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
                 const h = await getHash(filledDef);
                 for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                    const gData = `${h}\\n${s}\\n${superUser.pub}`; 
+                    const gData = `${h}\n${s}\n${superUser.pub}`;
                     const gId = await getHash(gData);
                     const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
                     const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
                     const ts = Date.now();
-                    const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
+                    const payData = `PREV:${gId}\nTYPE:PAYMENT\nTARGET:${target.pub}\nTS:${ts}`;
                     const sig = await signData(payData, superUser.keyPair.privateKey);
                     const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
                     await updateGlobalState(genesis); await updateGlobalState(payment);
@@ -846,7 +846,7 @@
 
         async function createAndBroadcastChannel(u1, u2) {
             const sorted = [u1.pub, u2.pub].sort();
-            const rootData = `Speedy Channel\\n${Date.now()}\\n${sorted[0]}\\n${u1.nodes ? u1.nodes[0] : 'UNK'}\\n${sorted[1]}\\n${u2.nodes ? u2.nodes[0] : 'UNK'}`;
+            const rootData = `Speedy Channel\n${Date.now()}\n${sorted[0]}\n${u1.nodes ? u1.nodes[0] : 'UNK'}\n${sorted[1]}\n${u2.nodes ? u2.nodes[0] : 'UNK'}`;
             const cId = await getHash(rootData); 
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
@@ -857,7 +857,7 @@
                     if (localUser && localUser.keyPair) {
                         const chains = simulationState.chains.filter(c => c.currentOwner === u.pub && c.status === 'FREE').sort((a, b) => b.denomination - a.denomination);
                         if(chains[0]) {
-                            const mData = `PREV:${chains[0].blocks[chains[0].blocks.length-1].id}\\nTYPE:MORTGAGE\\nTARGET:${cId}\\nTS:${Date.now()}`;
+                            const mData = `PREV:${chains[0].blocks[chains[0].blocks.length-1].id}\nTYPE:MORTGAGE\nTARGET:${cId}\nTS:${Date.now()}`;
                             const sig = await signData(mData, localUser.keyPair.privateKey);
                             const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: u.pub, target: cId, chainRootId: chains[0].genesisId, sig };
                             await updateGlobalState(mBlock);
@@ -879,7 +879,7 @@
             
             simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
                 n.seenIds.add(block.id);
-                const entry = `${t('log_sync')} Type:${block.type}\\nID:${block.id.slice(0,16)}...\\n${t('log_author')}:${block.author.slice(0,8)}...\\n${t('log_content')}: ${block.data}`;
+                const entry = `${t('log_sync')} Type:${block.type}\nID:${block.id.slice(0,16)}...\n${t('log_author')}:${block.author.slice(0,8)}...\n${t('log_content')}: ${block.data}`;
                 n.logs.unshift({ time: new Date().toLocaleTimeString(), type: block.type, data: entry });
                 if(n.logs.length > 50) n.logs.pop();
             });
@@ -895,7 +895,7 @@
 
             let c = simulationState.chains.find(x => x.genesisId === block.chainRootId);
             if (block.type === 'GENESIS' && !c) {
-                const parts = block.data.split('\\n'); const s = +parts[1]; 
+                const parts = block.data.split('\n'); const s = +parts[1];
                 let d = 1; if(s>80) d=50; else if(s>60) d=20; else if(s>40) d=10; else if(s>20) d=5;
                 c = { serial: s, denomination: r0(d), genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
                 simulationState.chains.push(c);
@@ -914,7 +914,7 @@
                 }
             }
             if (block.type === 'SPEEDY_CHANNEL_ROOT' && !simulationState.speedyChannels.find(x => x.id === block.id)) {
-                const l = block.data.split('\\n');
+                const l = block.data.split('\n');
                 const chanId = block.id;
                 const chan = { id: chanId, participants: [{pub:l[2], fp:l[2].slice(0,8), balance:0.00, node:l[3]}, {pub:l[4], fp:l[4].slice(0,8), balance:0.00, node:l[5]}], history: [] };
                 simulationState.speedyChannels.push(chan);
@@ -937,7 +937,7 @@
                 if (!n.seenIds.has(msg.mId)) {
                     if (n.neighbors.includes(msg.fromNode) || msg.originator === n.id) {
                         n.seenIds.add(msg.mId);
-                        const logEntry = `[${msg.type}] From:${msg.originator}\\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\\n${t('log_msg_id')}: ${msg.mId}`;
+                        const logEntry = `[${msg.type}] From:${msg.originator}\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\n${t('log_msg_id')}: ${msg.mId}`;
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
                         if(n.logs.length > 50) n.logs.pop();
                         if (msg.hop < 4) multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
@@ -1046,7 +1046,7 @@
             const node = simulationState.nodes.find(x => x.id === nid);
             const mId = Math.random().toString(36).substr(2, 9);
             relayToNeighbors(node, { type: 'BROADCAST_TEST', content: input.value, originator: nid, mId });
-            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\\n${t('log_content')}: ${input.value}\\n${t('log_msg_id')}: ${mId}` });
+            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\n${t('log_content')}: ${input.value}\n${t('log_msg_id')}: ${mId}` });
             input.value = ''; setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
         };
 
@@ -1130,7 +1130,7 @@
 
         window.execPayment = async function(chainId) {
             const c = simulationState.chains.find(x => x.genesisId === chainId), target = document.getElementById('pay-target-select').value, owner = simulationState.users.find(u => u.pub === c.currentOwner);
-            const data = `PREV:${c.blocks[c.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${target}\\nTS:${Date.now()}`;
+            const data = `PREV:${c.blocks[c.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${target}\nTS:${Date.now()}`;
             const sig = await signData(data, owner.keyPair.privateKey);
             const block = { id: sig, type: 'PAYMENT', author: c.currentOwner, target, chainRootId: chainId, data: data, sig };
             await updateGlobalState(block); multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
@@ -1215,7 +1215,7 @@
             const localUser = simulationState.users.find(u => u.pub === user.pub);
             if (!localUser || user.balance < chain.denomination) return;
 
-            const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\\nTYPE:PAYMENT\\nTARGET:${user.pub}\\nTS:${Date.now()}`;
+            const data = `PREV:${chain.blocks[chain.blocks.length-1].id}\nTYPE:PAYMENT\nTARGET:${user.pub}\nTS:${Date.now()}`;
             const sig = await signData(data, localUser.keyPair.privateKey);
             const block = { id: sig, type: 'PAYMENT', author: chanId, target: user.pub, chainRootId: chainId, data: data, sig };
             
