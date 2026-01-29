@@ -682,7 +682,7 @@
         };
 
         const CONFIG = {
-            NODE_COUNT: 15, ACCOUNT_COUNT: 5, BANKNOTE_COUNT: 50,
+            NODE_COUNT: 30, ACCOUNT_COUNT: 10, BANKNOTE_COUNT: 100,
             MQTT_BROKER: "wss://broker.emqx.io:8084/mqtt",
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
             DEFINITION_TEXT: "Define AOB prop bill: H\\nS\\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
@@ -899,6 +899,15 @@
                 simulationState.speedyChannels.push(chan);
                 addUserIfRemote(l[2]); addUserIfRemote(l[4]);
 
+                simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
+                    if (pm.target === block.id) {
+                        const p = chan.participants.find(p => p.pub === pm.author); if (p) p.balance = r2(p.balance + pm.value);
+                        const chain = simulationState.chains.find(x => x.genesisId === pm.genesisId); if (chain) chain.currentOwner = block.id;
+                        return false;
+                    }
+                    return true;
+                });
+
                 // Reactive Auto-mortgage logic for any local participant detected in a new channel root
                 for (const p of chan.participants) {
                     const localMe = simulationState.users.find(u => u.pub === p.pub);
@@ -916,15 +925,7 @@
                         }
                     }
                 }
-                
-                simulationState.pendingMortgages = simulationState.pendingMortgages.filter(pm => {
-                    if (pm.target === block.id) {
-                        const p = chan.participants.find(p => p.pub === pm.author); if (p) p.balance = r2(p.balance + pm.value);
-                        const chain = simulationState.chains.find(x => x.genesisId === pm.genesisId); if (chain) chain.currentOwner = block.id;
-                        return false;
-                    }
-                    return true;
-                });
+
             }
             window.debounceRender();
         }
@@ -1254,10 +1255,12 @@
             
             const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === curPub));
             nextEl.innerHTML = others.map(o => {
-                const isLocal1 = simulationState.users.some(u => u.pub === o.participants[0].pub);
-                const isLocal2 = simulationState.users.some(u => u.pub === o.participants[1].pub);
-                let typeClass = (isLocal1 && isLocal2) ? "chan-local" : (isLocal1 || isLocal2) ? "chan-hybrid" : "chan-remote";
-                let typeLabel = (isLocal1 && isLocal2) ? "Local" : (isLocal1 || isLocal2) ? "Hybrid" : "Remote";
+                const pxIdx = o.participants.findIndex(p => p.pub === curPub);
+                const dtIdx = pxIdx === 0 ? 1 : 0;
+                const p1 = o.participants[pxIdx], p2 = o.participants[dtIdx];
+                const isL1 = simulationState.users.some(u => u.pub === p1.pub), isL2 = simulationState.users.some(u => u.pub === p2.pub);
+                let typeClass = (isL1 && isL2) ? "chan-local" : (isL1 || isL2) ? "chan-hybrid" : "chan-remote";
+                let typeLabel = (isL1 && isL2) ? "Local" : (isL1 || isL2) ? "Hybrid" : "Remote";
                 
                 return `<button onclick="window.addCascadeHop('${o.id}')" class="w-full bg-white p-4 rounded-2xl text-[10px] text-indigo-700 text-left border-2 border-dashed border-indigo-200 hover:border-indigo-400 transition-all flex flex-col gap-2">
                     <div class="flex justify-between items-center w-full">
@@ -1265,8 +1268,8 @@
                         <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase ${typeClass.replace('chan-','bg-')} ${typeClass.replace('chan-','text-')} border opacity-80">${typeLabel}</span>
                     </div>
                     <div class="flex justify-between text-[8px] opacity-60 font-bold w-full border-t border-indigo-50 pt-1">
-                        <span>${o.participants[0].fp}: $${o.participants[0].balance.toFixed(2)}</span>
-                        <span>${o.participants[1].fp}: $${o.participants[1].balance.toFixed(2)}</span>
+                        <span>${p1.fp}: $${p1.balance.toFixed(2)}</span>
+                        <span>${p2.fp}: $${p2.balance.toFixed(2)}</span>
                     </div>
                 </button>`;
             }).join('') || `<div class="text-xs italic text-slate-400 py-4">No hops found</div>`;
