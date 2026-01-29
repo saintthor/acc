@@ -29,8 +29,13 @@
         .tab-content.active { display: flex; flex-direction: column; }
         
         /* Fixed overlay for details and AI chat */
-        .fixed-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 100; }
-        .fixed-overlay.open { opacity: 1; pointer-events: auto; }
+        .fixed-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);
+            display: none;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 100;
+        }
+        .fixed-overlay.open { display: flex; opacity: 1; pointer-events: auto; }
         #details-overlay, #ai-overlay { justify-content: flex-end; }
         #details-content, #ai-content { width: 100%; max-width: 550px; height: 100%; background: white; box-shadow: -10px 0 30px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
         #details-overlay.open #details-content, #ai-overlay.open #ai-content { transform: translateX(0); }
@@ -251,6 +256,7 @@
 
         window.closeAI = () => {
             document.getElementById('ai-overlay').classList.remove('open');
+            setTimeout(() => { document.getElementById('ai-overlay').style.display = 'none'; }, 300);
         };
 
         /**
@@ -260,7 +266,8 @@
         window.askAI = async (topicId) => {
             const overlay = document.getElementById('ai-overlay');
             const messagesEl = document.getElementById('ai-messages');
-            overlay.classList.add('open');
+            overlay.style.display = 'flex';
+            setTimeout(() => overlay.classList.add('open'), 10);
             
             // Sync AI Header Language
             document.getElementById('ai-header-title').innerText = currentLang === 'zh' ? 'AOB AI 助手' : 'AOB AI Assistant';
@@ -1294,8 +1301,19 @@
             cascadeSession.active = false; window.closeOverlay(); await saveFullState();
         };
 
-        window.openOverlay = (t_str) => { document.getElementById('overlay-title').innerText = t_str; document.getElementById('details-overlay').classList.add('open'); };
-        window.closeOverlay = () => { currentOpenedChannelId = null; document.getElementById('details-overlay').classList.remove('open'); window.renderAll(); };
+        window.openOverlay = (t_str) => {
+            document.getElementById('overlay-title').innerText = t_str;
+            const overlay = document.getElementById('details-overlay');
+            overlay.style.display = 'flex';
+            setTimeout(() => overlay.classList.add('open'), 10);
+        };
+        window.closeOverlay = () => {
+            currentOpenedChannelId = null;
+            const overlay = document.getElementById('details-overlay');
+            overlay.classList.remove('open');
+            setTimeout(() => { overlay.style.display = 'none'; }, 300);
+            window.renderAll();
+        };
         
         let simulation, svg, g;
         /**
@@ -1339,10 +1357,10 @@
             const container = document.getElementById('action-buttons'); if (!container) return;
             container.innerHTML = '';
             const steps = [
-                { id: 'btn-init-net', index: 0, text: t('btn_init_net'), action: 'initNetwork()', icon: 'network', topic: 'init_net' },
-                { id: 'btn-init-accounts', index: 1, text: t('btn_init_accounts'), action: 'initAccounts()', icon: 'users', topic: 'init_accounts' },
-                { id: 'btn-init-assets', index: 2, text: t('btn_init_assets'), action: 'initBanknotes()', icon: 'banknote', topic: 'init_assets' },
-                { id: 'btn-init-channels', index: 3, text: t('btn_init_channels'), action: 'initChannels()', icon: 'zap', topic: 'init_channels' }
+                { id: 'btn-init-net', index: 0, text: t('btn_init_net'), action: 'initNetwork', icon: 'network', topic: 'init_net' },
+                { id: 'btn-init-accounts', index: 1, text: t('btn_init_accounts'), action: 'initAccounts', icon: 'users', topic: 'init_accounts' },
+                { id: 'btn-init-assets', index: 2, text: t('btn_init_assets'), action: 'initBanknotes', icon: 'banknote', topic: 'init_assets' },
+                { id: 'btn-init-channels', index: 3, text: t('btn_init_channels'), action: 'initChannels', icon: 'zap', topic: 'init_channels' }
             ];
             steps.forEach(s => {
                 if (simulationState.step > s.index) return;
@@ -1350,13 +1368,22 @@
                 wrapper.className = "flex items-center gap-1";
 
                 const btn = document.createElement('button');
-                btn.id = s.id; btn.onclick = new Function(s.action);
+                btn.id = s.id;
                 btn.className = `btn-box ${simulationState.step === s.index ? 'btn-active' : 'btn-inactive'}`;
                 btn.disabled = simulationState.step !== s.index;
                 btn.innerHTML = `<i data-lucide="${s.icon}" size="18"></i> ${s.text}`;
+                btn.onclick = () => {
+                    if (typeof window[s.action] === 'function') window[s.action]();
+                };
                 
                 wrapper.appendChild(btn);
-                wrapper.innerHTML += helpIcon(s.topic);
+
+                const hIcon = document.createElement('button');
+                hIcon.className = "help-q-mark ml-1";
+                hIcon.innerHTML = `<i data-lucide="help-circle" size="14"></i>`;
+                hIcon.onclick = (e) => { e.stopPropagation(); window.askAI(s.topic); };
+                wrapper.appendChild(hIcon);
+
                 container.appendChild(wrapper);
             });
             const instr = document.getElementById('instruction-text');
