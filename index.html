@@ -80,7 +80,7 @@
             <div class="space-y-2">
                 <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership TestNet</p>
                 <h1 id="main-title" class="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-2">
-                    先进加密货币示范网
+                    先进加载货币节点仿真网
                     <button onclick="window.askAI('intro')" class="help-q-mark"><i data-lucide="help-circle" size="20"></i></button>
                 </h1>
                 <div id="status-line" class="text-sm text-slate-500 font-bold leading-relaxed flex flex-wrap items-center gap-3">
@@ -528,7 +528,7 @@
                 node_broadcast_btn: "Broadcast",
                 node_logs: "Sync Logs",
                 no_logs: "No messages.",
-                no_accounts: "None",
+                node_accounts: "None",
                 acc_balance: "Liquidity",
                 acc_create_channel: "Create Channel",
                 acc_create_channel_btn: "Establish Channel",
@@ -671,12 +671,12 @@
         var cascadeSession = { active: false, path: [], initiatorIdx: 0 }; 
         var currentOpenedChannelId = null;
 
-        window.simulationState = {
+        var simulationState = window.simulationState = {
             nodes: [], users: [], remoteUsers: [], 
             chains: [], speedyChannels: [], step: 0,
             processedIds: new Set(),
             pendingMortgages: [],
-            activeAmount: 10.00,
+            activeAmount: "10.00",
             readyFlags: [], 
             instanceId: appInstanceId
         };
@@ -721,7 +721,7 @@
                 const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
                 if (locals.length > 0) {
                     const n = locals[Math.floor(Math.random() * locals.length)];
-                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
+                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
                 }
             }
         }
@@ -835,9 +835,8 @@
         };
 
         async function createAndBroadcastChannel(u1, u2) {
-            const p1 = u1.pub < u2.pub ? u1 : u2;
-            const p2 = u1.pub < u2.pub ? u2 : u1;
-            const rootData = `Speedy Channel\\n${Date.now()}\\n${p1.pub}\\n${p1.nodes ? p1.nodes[0] : 'UNK'}\\n${p2.pub}\\n${p2.nodes ? p2.nodes[0] : 'UNK'}`;
+            const sorted = [u1.pub, u2.pub].sort();
+            const rootData = `Speedy Channel\\n${Date.now()}\\n${sorted[0]}\\n${u1.nodes ? u1.nodes[0] : "UNK"}\\n${sorted[1]}\\n${u2.nodes ? u2.nodes[0] : "UNK"}`;
             const cId = await getHash(rootData); 
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
@@ -857,7 +856,7 @@
             
             simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => {
                 n.seenIds.add(block.id);
-                const entry = `${t('log_sync')} Type:${block.type}\nID:${block.id.slice(0,16)}...\n${t('log_author')}:${block.author.slice(0,8)}...\n${t('log_content')}: ${block.data}`;
+                const entry = `${t("log_sync")} Type:${block.type}\\nID:${block.id.slice(0,16)}...\\n${t("log_author")}:${block.author.slice(0,8)}...\\n${t("log_content")}: ${block.data}`;
                 n.logs.unshift({ time: new Date().toLocaleTimeString(), type: block.type, data: entry });
                 if(n.logs.length > 50) n.logs.pop();
             });
@@ -875,7 +874,7 @@
             let c = simulationState.chains.find(x => x.genesisId === block.chainRootId);
             if (block.type === 'GENESIS' && !c) {
                 const parts = block.data.split('\\n'); const s = +parts[1];
-                let d = 1; if(s>80) d=50; else if(s>60) d=20; else if(s>40) d=10; else if(s>20) d=5;
+                let d = s > 80 ? 50 : s > 60 ? 20 : s > 40 ? 10 : s > 20 ? 5 : 1;
                 c = { serial: s, denomination: r0(d), genesisId: block.id, blocks: [block], currentOwner: 'SYSTEM', status: 'FREE' };
                 simulationState.chains.push(c);
             } else if (c) {
@@ -935,7 +934,7 @@
                 if (!n.seenIds.has(msg.mId)) {
                     if (n.neighbors.includes(msg.fromNode) || msg.originator === n.id) {
                         n.seenIds.add(msg.mId);
-                        const logEntry = `[${msg.type}] From:${msg.originator}\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\n${t('log_msg_id')}: ${msg.mId}`;
+                        const logEntry = `[${msg.type}] From:${msg.originator}\\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\\n${t('log_msg_id')}: ${msg.mId}`;
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
                         if(n.logs.length > 50) n.logs.pop();
                         if (msg.hop < 4 && mqttClient && mqttClient.connected) {
@@ -963,6 +962,14 @@
             });
             if(id === 'nodes' && simulation) updateNetworkViz();
             window.debounceRender();
+        };
+
+        let renderTimeout;
+        window.debounceRender = () => {
+            if (renderTimeout) clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+                window.renderAll();
+            }, 50);
         };
 
         window.renderAll = function() {
@@ -999,15 +1006,35 @@
             }
             const chGrid = document.getElementById('channel-grid'); if(chGrid) {
                 chGrid.innerHTML = '';
-                simulationState.speedyChannels.forEach(c => {
+                const sortedChans = [...simulationState.speedyChannels].sort((a,b) => b.id.localeCompare(a.id));
+                sortedChans.forEach(c => {
                     const isLocal1 = simulationState.users.some(u => u.pub === c.participants[0].pub);
                     const isLocal2 = simulationState.users.some(u => u.pub === c.participants[1].pub);
                     let typeClass = (isLocal1 && isLocal2) ? "chan-local" : (isLocal1 || isLocal2) ? "chan-hybrid" : "chan-remote";
                     let typeLabel = (isLocal1 && isLocal2) ? "LOCAL" : (isLocal1 || isLocal2) ? "HYBRID" : "REMOTE";
                     
-                    const el = document.createElement('div'); el.className = `card ${typeClass}`;
+                    const el = document.createElement('div'); el.className = `card-channel p-6 bg-white border-2 rounded-[2rem] shadow-sm hover:shadow-xl transition-all cursor-pointer ${typeClass}`;
                     el.onclick = () => window.openChannelOverlay(c.id);
-                    el.innerHTML = `<div class="text-[9px] font-black mb-2 uppercase tracking-tighter">${typeLabel} CHANNEL</div><div class="flex justify-between items-center text-xs"><div class="text-center font-bold"><div>$${c.participants[0].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal1?'participant-local':''}" title="${c.participants[0].pub}">${c.participants[0].fp}</div></div><i data-lucide="zap" class="opacity-40" size="14"></i><div class="text-center font-bold"><div>$${c.participants[1].balance.toFixed(2)}</div><div class="text-[8px] opacity-60 ${isLocal2?'participant-local':''}" title="${c.participants[1].pub}">${c.participants[1].fp}</div></div></div><div class="text-[8px] mono opacity-40 mt-3 pt-2 border-t border-slate-100 truncate" title="${c.id}">ID: ${c.id.slice(0,16)}...</div>`;
+                    el.innerHTML = `
+                        <div class="flex justify-between items-center mb-6">
+                            <span class="px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${typeClass.replace('chan-','bg-')} ${typeClass.replace('chan-','text-')} border-2 border-current/20 shadow-sm">${typeLabel}</span>
+                            <span class="mono text-[9px] font-bold text-slate-400">ID:${c.id.slice(0,8)}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-4 mb-6">
+                            <div class="text-center flex-1">
+                                <div class="text-2xl font-black text-slate-800">$${c.participants[0].balance.toFixed(2)}</div>
+                                <div class="text-[8px] mono text-indigo-400 mt-1 font-bold truncate w-20 mx-auto" title="${c.participants[0].pub}">${c.participants[0].fp}</div>
+                            </div>
+                            <div class="h-10 w-px bg-gradient-to-b from-transparent via-slate-200 to-transparent"></div>
+                            <div class="text-center flex-1">
+                                <div class="text-2xl font-black text-slate-800">$${c.participants[1].balance.toFixed(2)}</div>
+                                <div class="text-[8px] mono text-indigo-400 mt-1 font-bold truncate w-20 mx-auto" title="${c.participants[1].pub}">${c.participants[1].fp}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 opacity-20">
+                            <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-indigo-600" style="width: ${(c.participants[0].balance / (c.participants[0].balance + c.participants[1].balance || 1)) * 100}%"></div></div>
+                        </div>
+                    `;
                     chGrid.appendChild(el);
                 });
             }
@@ -1045,10 +1072,10 @@
         window.broadcastTest = (nid) => {
             const input = document.getElementById('node-test-input'); if(!input.value) return;
             const node = simulationState.nodes.find(x => x.id === nid);
-            const mId = Math.random().toString(36).substring(7);
+            const mId = Math.random().toString(36).substr(2, 9);
             relayToNeighbors(node, { type: 'BROADCAST_TEST', content: input.value, originator: nid, mId });
-            input.value = '';
-            setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
+            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\n${t('log_content')}: ${input.value}\n${t('log_msg_id')}: ${mId}` });
+            input.value = ''; setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
         };
 
         window.openAccountOverlay = function(pub) {
@@ -1081,7 +1108,7 @@
                     <div class="space-y-3">
                         <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('acc_chains')}${helpIcon('acc_chains')} (${ownedChains.length})</h4>
                         <div class="grid grid-cols-2 gap-2">
-                            ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold mt-1" title="${c.genesisId}"><span class="uppercase">ID</span>:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
+                            ${ownedChains.map(c => `<button onclick="window.openChainOverlay('${c.genesisId}')" class="p-4 border-2 ${c.status==='FREE'?'border-indigo-50 hover:border-indigo-200':'border-slate-100 grayscale opacity-50'} bg-white rounded-2xl text-center"><div class="text-xl font-black text-slate-800">$${c.denomination}</div><div class="text-[8px] mono text-slate-400 font-bold uppercase mt-1" title="${c.genesisId}">ID:${c.genesisId.slice(0,8)}</div></button>`).join('') || `<div class="text-xs text-slate-300 italic py-4 text-center col-span-2">No Assets</div>`}
                         </div>
                     </div>
                 </div>`;
@@ -1165,7 +1192,7 @@
                                 <option value="0" ${!isP1Local ? 'disabled' : ''}>${p1.fp}</option>
                                 <option value="1" ${!isP2Local ? 'disabled' : ''}>${p2.fp}</option>
                             </select>
-                            <input id="ch-amt" type="number" step="any" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none" value="${simulationState.activeAmount || 10.00}" oninput="window.simulationState.activeAmount = this.value">
+                            <input id="ch-amt" type="number" step="any" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none" value="${simulationState.activeAmount || '10.00'}" oninput="window.simulationState.activeAmount = this.value">
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <button onclick="window.execChPay('${id}')" class="bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg">${t('chan_direct')}</button>
@@ -1250,7 +1277,7 @@
             stepsEl.innerHTML = cascadeSession.path.map((cid, i) => {
                 const chan = simulationState.speedyChannels.find(x => x.id === cid), sender = chan.participants.find(p => p.pub === curPub), receiver = chan.participants.find(p => p.pub !== curPub);
                 curPub = receiver.pub;
-                return `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm"><div class="flex justify-between font-black text-indigo-600"><span class="uppercase">${t('chan_hop')} #${i+1}</span><span class="mono">ID:${cid.slice(0,8)}</span></div><div class="flex items-center gap-2 mt-1"><span class="mono px-2 py-0.5 bg-indigo-50 rounded font-bold">${sender.fp}</span><i data-lucide="arrow-right" size="10" class="text-slate-300"></i><span class="mono px-2 py-0.5 bg-emerald-50 rounded font-bold">${receiver.fp}</span></div></div>`;
+                return `<div class="p-4 bg-white rounded-2xl text-[10px] border-2 border-indigo-100 flex flex-col gap-1 shadow-sm"><div class="flex justify-between font-black text-indigo-600 uppercase"><span>${t('chan_hop')} #${i+1}</span><span class="mono">ID:${cid.slice(0,8)}</span></div><div class="flex items-center gap-2 mt-1"><span class="mono px-2 py-0.5 bg-indigo-50 rounded font-bold">${sender.fp}</span><i data-lucide="arrow-right" size="10" class="text-slate-300"></i><span class="mono px-2 py-0.5 bg-emerald-50 rounded font-bold">${receiver.fp}</span></div></div>`;
             }).join('');
             
             const others = simulationState.speedyChannels.filter(c => !cascadeSession.path.includes(c.id) && c.participants.some(p => p.pub === curPub));
@@ -1267,7 +1294,7 @@
                         <span class="font-black">${t('chan_via')} ${o.id.slice(0,8)}</span>
                         <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase ${typeClass.replace('chan-','bg-')} ${typeClass.replace('chan-','text-')} border opacity-80">${typeLabel}</span>
                     </div>
-                    <div class="flex justify-between text-[8px] opacity-60 font-bold w-full border-t border-indigo-50 pt-1">
+                    <div class="flex justify-between text-[8px] opacity-60 font-bold uppercase w-full border-t border-indigo-50 pt-1">
                         <span>${p1.fp}: $${p1.balance.toFixed(2)}</span>
                         <span>${p2.fp}: $${p2.balance.toFixed(2)}</span>
                     </div>
@@ -1474,14 +1501,6 @@
 
         mqttClient.on('close', () => { updateLanguageContent(); });
         mqttClient.on('reconnect', () => { updateLanguageContent(); });
-
-        let renderTimeout;
-        window.debounceRender = () => {
-            if (renderTimeout) clearTimeout(renderTimeout);
-            renderTimeout = setTimeout(() => {
-                if (window.renderAll) window.renderAll();
-            }, 50);
-        };
 
         setInterval(updateLanguageContent, 3000);
 
