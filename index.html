@@ -80,7 +80,7 @@
             <div class="space-y-2">
                 <p class="text-xs font-black text-indigo-600 uppercase tracking-[0.3em]">Atomic Ownership TestNet</p>
                 <h1 id="main-title" class="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-2">
-                    先进加载货币节点仿真网
+                    先进加密货币示范网
                     <button onclick="window.askAI('intro')" class="help-q-mark"><i data-lucide="help-circle" size="20"></i></button>
                 </h1>
                 <div id="status-line" class="text-sm text-slate-500 font-bold leading-relaxed flex flex-wrap items-center gap-3">
@@ -528,7 +528,7 @@
                 node_broadcast_btn: "Broadcast",
                 node_logs: "Sync Logs",
                 no_logs: "No messages.",
-                node_accounts: "None",
+                no_accounts: "None",
                 acc_balance: "Liquidity",
                 acc_create_channel: "Create Channel",
                 acc_create_channel_btn: "Establish Channel",
@@ -665,7 +665,7 @@
         }
 
         var superUser = null;
-        var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4);
+        var appInstanceId = localStorage.getItem('aob_instance_id') || Math.random().toString(36).substr(2, 4).toUpperCase();
         localStorage.setItem('aob_instance_id', appInstanceId);
 
         var cascadeSession = { active: false, path: [], initiatorIdx: 0 }; 
@@ -683,7 +683,7 @@
 
         const CONFIG = {
             NODE_COUNT: 30, ACCOUNT_COUNT: 10, BANKNOTE_COUNT: 100,
-            MQTT_BROKER: "wss://broker.emqx.io:8084/mqtt",
+            MQTT_BROKER: 'ws://test.mosquitto.org:8080',
             TOPIC_MESH: 'aob/v25/global_mesh', TOPIC_DISCOVERY: 'aob/v25/discovery', TOPIC_P2P: 'aob/v25/p2p',
             DEFINITION_TEXT: "Define AOB prop bill: H\\nS\\nK. H=doc SHA256, K=SysPubKey, S=Serial. Deno Mapping: 1-20 $1, 21-40 $5, 41-60 $10, 61-80 $20, 81-100 $50."
         };
@@ -720,8 +720,12 @@
             if (simulationState.step >= 1) {
                 const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
                 if (locals.length > 0) {
-                    const n = locals[Math.floor(Math.random() * locals.length)];
-                    mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors }));
+                    const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 3);
+                    subset.forEach(n => {
+                        mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({
+                            type: 'HELLO', id: n.id, instance: appInstanceId, neighbors: n.neighbors
+                        }));
+                    });
                 }
             }
         }
@@ -746,6 +750,7 @@
                 });
                 simulationState.nodes = locals;
             }
+            simulationState.nodes.filter(n => n.instance === appInstanceId).forEach(n => mqttClient.subscribe(`${CONFIG.TOPIC_P2P}/${n.id}`));
             initNetworkViz();
             simulationState.readyFlags = [t('ready_net')];
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
@@ -780,25 +785,20 @@
         };
 
         window.initBanknotes = async function() {
-            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
-            if (saved && saved.chains && saved.chains.length > 0) {
-                simulationState.chains = saved.chains;
-            } else {
-                const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
-                const h = await getHash(filledDef);
-                for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                    const gData = `${h}\\n${s}\\n${superUser.pub}`;
-                    const gId = await getHash(gData);
-                    const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
-                    const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
-                    const ts = Date.now();
-                    const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
-                    const sig = await signData(payData, superUser.keyPair.privateKey);
-                    const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
-                    await updateGlobalState(genesis); await updateGlobalState(payment);
-                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
-                    if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
-                }
+            const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
+            const h = await getHash(filledDef);
+            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                const gData = `${h}\\n${s}\\n${superUser.pub}`;
+                const gId = await getHash(gData);
+                const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
+                const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
+                const ts = Date.now();
+                const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
+                const sig = await signData(payData, superUser.keyPair.privateKey);
+                const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
+                await updateGlobalState(genesis); await updateGlobalState(payment);
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
             }
             simulationState.readyFlags.push(t('ready_assets'));
             simulationState.step = 3; updateStepUI(); window.switchTab('chains');
@@ -806,25 +806,20 @@
         };
 
         window.initChannels = async function() {
-            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
-            if (saved && saved.speedyChannels && saved.speedyChannels.length > 0) {
-                simulationState.speedyChannels = saved.speedyChannels;
-            } else {
-                const users = simulationState.users;
-                const remotes = simulationState.remoteUsers;
-                for (let round = 0; round < 20; round++) {
-                    for (let i = 0; i < users.length; i++) {
-                        let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
-                        if (curCount >= 4) continue;
-                        let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
-                        pool.sort(() => Math.random() - 0.5);
-                        for (let targetPub of pool) {
-                            const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
-                            const sorted = [users[i].pub, targetPub].sort();
-                            if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
-                                await createAndBroadcastChannel(users[i], u2);
-                                if (++curCount >= 4) break;
-                            }
+            const users = simulationState.users;
+            const remotes = simulationState.remoteUsers;
+            for (let round = 0; round < 20; round++) {
+                for (let i = 0; i < users.length; i++) {
+                    let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
+                    if (curCount >= 4) continue;
+                    let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
+                    pool.sort(() => Math.random() - 0.5);
+                    for (let targetPub of pool) {
+                        const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
+                        const sorted = [users[i].pub, targetPub].sort();
+                        if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
+                            await createAndBroadcastChannel(users[i], u2);
+                            if (++curCount >= 4) break;
                         }
                     }
                 }
@@ -841,7 +836,7 @@
             if (!simulationState.speedyChannels.find(x => x.id === cId)) {
                 const block = { id: cId, type: 'SPEEDY_CHANNEL_ROOT', data: rootData, author: u1.pub, chainRootId: cId };
                 await updateGlobalState(block);
-                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
+                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block }));
             }
             return cId;
         }
@@ -919,7 +914,7 @@
                                 const sig = await signData(mData, localMe.keyPair.privateKey);
                                 const mBlock = { id: sig, type: 'MORTGAGE', data: mData, author: p.pub, target: chanId, chainRootId: myAssets[0].genesisId, sig };
                                 await updateGlobalState(mBlock);
-                                if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
+                                mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ block: mBlock }));
                             }
                         }
                     }
@@ -937,7 +932,7 @@
                         const logEntry = `[${msg.type}] From:${msg.originator}\\n${t('log_content')}: ${msg.content || 'P2P Broadcast'}\\n${t('log_msg_id')}: ${msg.mId}`;
                         n.logs.unshift({ time: new Date().toLocaleTimeString(), type: msg.type, data: logEntry });
                         if(n.logs.length > 50) n.logs.pop();
-                        if (msg.hop < 4 && mqttClient && mqttClient.connected) {
+                        if (msg.hop < 4) {
                             mqttClient.publish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...msg, fromNode: n.id, hop: msg.hop + 1 } }));
                         }
                     }
@@ -1074,7 +1069,7 @@
             const node = simulationState.nodes.find(x => x.id === nid);
             const mId = Math.random().toString(36).substr(2, 9);
             relayToNeighbors(node, { type: 'BROADCAST_TEST', content: input.value, originator: nid, mId });
-            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\n${t('log_content')}: ${input.value}\n${t('log_msg_id')}: ${mId}` });
+            node.logs.unshift({ time: new Date().toLocaleTimeString(), type: 'BROADCAST_TEST', data: `${t('log_test')} Author:${nid}\\n${t('log_content')}: ${input.value}\\n${t('log_msg_id')}: ${mId}` });
             input.value = ''; setTimeout(() => { if (!currentOpenedChannelId) window.openNodeOverlay(nid); }, 100);
         };
 
@@ -1192,7 +1187,7 @@
                                 <option value="0" ${!isP1Local ? 'disabled' : ''}>${p1.fp}</option>
                                 <option value="1" ${!isP2Local ? 'disabled' : ''}>${p2.fp}</option>
                             </select>
-                            <input id="ch-amt" type="number" step="any" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none" value="${simulationState.activeAmount || '10.00'}" oninput="window.simulationState.activeAmount = this.value">
+                            <input id="ch-amt" type="number" step="any" class="w-24 bg-slate-50 p-4 rounded-xl text-xs font-black outline-none" value="${simulationState.activeAmount}" oninput="window.simulationState.activeAmount = this.value">
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <button onclick="window.execChPay('${id}')" class="bg-indigo-600 text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg">${t('chan_direct')}</button>
@@ -1255,7 +1250,7 @@
         };
 
         window.execChPay = async function(id) {
-            const c = simulationState.speedyChannels.find(x=>x.id===id), sIdx = +document.getElementById('ch-sender').value, amt = r2(Number(simulationState.activeAmount || 10.00));
+            const c = simulationState.speedyChannels.find(x=>x.id===id), sIdx = +document.getElementById('ch-sender').value, amt = r2(Number(simulationState.activeAmount));
             if (isNaN(amt) || amt <= 0 || c.participants[sIdx].balance < amt) return;
             const sender = c.participants[sIdx], receiver = c.participants[sIdx === 0 ? 1 : 0];
             sender.balance = r2(sender.balance - amt);
@@ -1305,7 +1300,7 @@
 
         window.addCascadeHop = (id) => { cascadeSession.path.push(id); window.updateCascadeList(); };
         window.executeCascade = async () => {
-            const amt = r2(Number(simulationState.activeAmount || 10.00)); if (isNaN(amt) || amt <= 0) return;
+            const amt = r2(Number(simulationState.activeAmount)); if (isNaN(amt) || amt <= 0) return;
             const initialChan = simulationState.speedyChannels.find(x => x.id === cascadeSession.path[0]);
             let curPub = initialChan.participants[cascadeSession.initiatorIdx].pub;
             for (let cid of cascadeSession.path) {
@@ -1433,7 +1428,6 @@
             reconnectPeriod: 5000
         });
 
-        let discoveryInterval = null;
         mqttClient.on('connect', () => {
             mqttClient.subscribe(CONFIG.TOPIC_MESH);
             mqttClient.subscribe(CONFIG.TOPIC_DISCOVERY);
@@ -1444,7 +1438,7 @@
                 s.innerText = t('broker_online');
                 s.className = "px-4 py-2 bg-green-50 text-green-600 text-[10px] font-black rounded-full uppercase border border-green-100";
             }
-            if (!discoveryInterval) discoveryInterval = setInterval(startDiscovery, 10000);
+            setInterval(startDiscovery, 10000);
         });
 
         mqttClient.on('message', (topic, payload) => {
@@ -1464,11 +1458,13 @@
                             if (d.type === 'HELLO') {
                                 const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
                                 if(locals[0]) {
-                                    const ln = locals[Math.floor(Math.random() * locals.length)];
-                                    if(!ln.neighbors.includes(d.id)) { 
-                                        ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); 
-                                        if (mqttClient && mqttClient.connected) mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors }));
-                                    }
+                                    const subset = locals.sort(() => 0.5 - Math.random()).slice(0, 2);
+                                    subset.forEach(ln => {
+                                        if(!ln.neighbors.includes(d.id)) {
+                                            ln.neighbors.push(d.id); rNode.neighbors.push(ln.id);
+                                            mqttClient.publish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors }));
+                                        }
+                                    });
                                 }
                             } else if (d.type === 'HELLO_BACK') {
                                 const ln = simulationState.nodes.find(n => n.id === d.targetId && n.instance === appInstanceId);
