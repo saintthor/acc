@@ -740,6 +740,7 @@
             const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
             if (saved && saved.nodes && saved.nodes.length > 0) {
                 simulationState.nodes = saved.nodes.map(n => ({ ...n, ledger: {}, seenIds: new Set(), logs: n.logs || [] }));
+                simulationState.nodes.forEach(n => pruneNeighbors(n.id));
                 simulationState.instanceId = saved.instanceId;
             } else {
                 const locals = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
@@ -748,7 +749,7 @@
                 locals.forEach(n => {
                     while (n.neighbors.length < 4) {
                         const t_node = locals[Math.floor(Math.random() * locals.length)];
-                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id) && t_node.neighbors.length < 7) {
+                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id) && t_node.neighbors.length < 7 && n.neighbors.length < 7) {
                             n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
                         }
                         if (locals.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
@@ -952,6 +953,19 @@
             });
         }
 
+        function pruneNeighbors(nodeId) {
+            const node = simulationState.nodes.find(n => n.id === nodeId);
+            if (!node) return;
+            while (node.neighbors.length > 7) {
+                const idx = Math.floor(Math.random() * node.neighbors.length);
+                const removedId = node.neighbors.splice(idx, 1)[0];
+                const neighborNode = simulationState.nodes.find(n => n.id === removedId);
+                if (neighborNode) {
+                    neighborNode.neighbors = neighborNode.neighbors.filter(id => id !== nodeId);
+                }
+            }
+        }
+
         function relayToNeighbors(node, payload) {
             node.neighbors.forEach(nbId => {
                 multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ relay: { ...payload, fromNode: node.id, hop: 0 } }));
@@ -1049,7 +1063,7 @@
                     </div>
                     <div class="space-y-3">
                         <h4 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">${t('node_logs')}${helpIcon('node_logs')}</h4>
-                        <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">${n.logs.map(l => `<div class="p-4 border bg-white rounded-2xl flex flex-col gap-1 shadow-sm"><div class="flex justify-between items-center"><span class="text-[8px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">${l.type}</span><span class="text-[8px] font-bold text-slate-400 mono">${l.time}</span></div><div class="text-[10px] font-bold text-slate-700 break-all leading-relaxed whitespace-pre-wrap">${l.data}</div></div>`).join('') || `<div class="text-xs text-slate-300 italic text-center py-8">${t('no_logs')}</div>`}</div>
+                        <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">${n.logs.map(l => `<div class="p-4 border bg-white rounded-2xl flex flex-col gap-1 shadow-sm"><div class="flex justify-between items-center"><span class="text-[8px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">${l.type}</span><span class="text-[8px] font-bold text-slate-400 mono">${l.time}</span></div><div class="text-[10px] font-bold text-slate-700 break-all leading-relaxed whitespace-pre-wrap">${l.data.replace(/\n/g, '\\\\n')}</div></div>`).join('') || `<div class="text-xs text-slate-300 italic text-center py-8">${t('no_logs')}</div>`}</div>
                     </div>
                 </div>`;
             if(window.lucide) lucide.createIcons();
@@ -1444,17 +1458,21 @@
                                 simulationState.nodes.push(rNode); 
                             }
                             if (d.type === 'HELLO') {
-                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
+                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 7);
                                 if(locals[0]) {
                                     const ln = locals[Math.floor(Math.random() * locals.length)];
                                     if(!ln.neighbors.includes(d.id)) {
                                         ln.neighbors.push(d.id); rNode.neighbors.push(ln.id);
+                                        pruneNeighbors(ln.id); pruneNeighbors(rNode.id);
                                         multiPublish(CONFIG.TOPIC_DISCOVERY, JSON.stringify({ type: 'HELLO_BACK', id: ln.id, targetId: d.id, instance: appInstanceId, neighbors: ln.neighbors }));
                                     }
                                 }
                             } else if (d.type === 'HELLO_BACK') {
                                 const ln = simulationState.nodes.find(n => n.id === d.targetId && n.instance === appInstanceId);
-                                if(ln && !ln.neighbors.includes(d.id)) { ln.neighbors.push(d.id); rNode.neighbors.push(ln.id); }
+                                if(ln && !ln.neighbors.includes(d.id)) {
+                                    ln.neighbors.push(d.id); rNode.neighbors.push(ln.id);
+                                    pruneNeighbors(ln.id); pruneNeighbors(rNode.id);
+                                }
                             }
                             if(simulation) updateNetworkViz();
                         } else if (topic.startsWith(CONFIG.TOPIC_P2P) && d.type === 'SPEEDY_CHANNEL_UPDATE') {
