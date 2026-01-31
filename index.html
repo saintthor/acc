@@ -749,7 +749,7 @@
                 locals.forEach(n => {
                     while (n.neighbors.length < 4) {
                         const t_node = locals[Math.floor(Math.random() * locals.length)];
-                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id) && t_node.neighbors.length < 7 && n.neighbors.length < 7) {
+                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id)) {
                             n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
                         }
                         if (locals.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
@@ -1458,7 +1458,7 @@
                                 simulationState.nodes.push(rNode); 
                             }
                             if (d.type === 'HELLO') {
-                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 7);
+                                const locals = simulationState.nodes.filter(n => n.instance === appInstanceId && n.neighbors.length < 8);
                                 if(locals[0]) {
                                     const ln = locals[Math.floor(Math.random() * locals.length)];
                                     if(!ln.neighbors.includes(d.id)) {
