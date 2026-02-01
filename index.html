@@ -705,7 +705,7 @@
          */
         async function saveFullState() {
             const data = {
-                nodes: simulationState.nodes.filter(n => n.instance === appInstanceId).map(n => ({ ...n, ledger: undefined, seenIds: undefined, logs: n.logs.slice(0, 50) })),
+                nodes: simulationState.nodes.filter(n => n.instance === appInstanceId).map(n => ({ ...n, neighbors: [], ledger: undefined, seenIds: undefined, logs: n.logs.slice(0, 50) })),
                 users: await Promise.all(simulationState.users.map(async u => {
                     const jwk = await crypto.subtle.exportKey("jwk", u.keyPair.privateKey);
                     return { ...u, jwk, keyPair: undefined };
@@ -773,8 +773,7 @@
         window.initNetwork = async function() {
             const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
             if (saved && saved.nodes && saved.nodes.length > 0) {
-                simulationState.nodes = saved.nodes.map(n => ({ ...n, ledger: {}, seenIds: new Set(), logs: n.logs || [] }));
-                simulationState.nodes.forEach(n => pruneNeighbors(n.id));
+                simulationState.nodes = saved.nodes.map(n => ({ ...n, neighbors: [], ledger: {}, seenIds: new Set(), logs: n.logs || [] }));
                 simulationState.instanceId = saved.instanceId;
             } else {
                 const locals = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
@@ -1387,6 +1386,8 @@
         };
         
         let simulation, svg, g;
+        let vizNodes = [], vizLinks = [];
+
         /**
          * Initialize D3 Simulation for Mesh Network visualization.
          */
@@ -1394,36 +1395,83 @@
             svg = d3.select("#network-svg"); if(!svg.node()) return;
             const container = svg.node().parentElement;
             const w = container.clientWidth, h = container.clientHeight;
-            g = svg.append("g"); svg.call(d3.zoom().scaleExtent([0.1, 5]).on("zoom", (e) => g.attr("transform", e.transform)));
-            simulation = d3.forceSimulation().force("link", d3.forceLink().id(d => d.id).distance(150)).force("charge", d3.forceManyBody().strength(-400)).force("center", d3.forceCenter(w / 2, h / 2));
+            g = svg.append("g");
+            svg.call(d3.zoom().scaleExtent([0.1, 5]).on("zoom", (e) => g.attr("transform", e.transform)));
+
+            simulation = d3.forceSimulation()
+                .force("link", d3.forceLink().id(d => d.id).distance(150))
+                .force("charge", d3.forceManyBody().strength(-400))
+                .force("center", d3.forceCenter(w / 2, h / 2));
+
             updateNetworkViz();
         }
 
         /**
          * Update graph with real-time nodes and connections.
+         * Uses object constancy to keep nodes in place and accurately reflect neighbors.
          */
         function updateNetworkViz() {
             if(!g) return;
             const container = document.getElementById('network-svg').parentElement;
             const w = container.clientWidth, h = container.clientHeight;
             if (simulation && w > 0) simulation.force("center", d3.forceCenter(w / 2, h / 2));
-            const nodes = simulationState.nodes.map(n => ({ id: n.id, local: n.instance === appInstanceId }));
-            const links = []; 
-            simulationState.nodes.forEach(n => { 
-                n.neighbors.forEach(nbid => { 
-                    if (simulationState.nodes.some(x => x.id === nbid)) {
+
+            // Sync node objects to preserve simulation state (x, y, vx, vy)
+            const nodeMap = new Map(vizNodes.map(d => [d.id, d]));
+            vizNodes = simulationState.nodes.map(n => {
+                let d = nodeMap.get(n.id);
+                if (!d) d = { id: n.id };
+                d.local = (n.instance === appInstanceId);
+                return d;
+            });
+
+            // Rebuild links based on current neighbors
+            const links = [];
+            const nodeIdSet = new Set(vizNodes.map(d => d.id));
+            simulationState.nodes.forEach(n => {
+                n.neighbors.forEach(nbid => {
+                    if (nodeIdSet.has(nbid)) {
                         const linkId = [n.id, nbid].sort().join('-');
                         if (!links.some(l => l.linkId === linkId)) {
-                            links.push({ source: n.id, target: nbid, linkId }); 
+                            links.push({ source: n.id, target: nbid, linkId });
                         }
                     }
-                }); 
+                });
             });
-            g.selectAll("*").remove();
-            const link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
-            const node = g.append("g").selectAll("circle").data(nodes).enter().append("circle").attr("r", 12).attr("fill", d => d.local ? "#4f46e5" : "#fb923c").attr("class", "node shadow-lg").on("click", (e, d) => window.openNodeOverlay(d.id));
-            simulation.nodes(nodes); simulation.force("link").links(links); simulation.alpha(1).restart();
-            simulation.on("tick", () => { link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y); node.attr("cx", d => d.x).attr("cy", d => d.y); });
+            vizLinks = links;
+
+            // Update SVG elements
+            g.selectAll(".link-group").remove();
+            g.selectAll(".node-group").remove();
+
+            const linkLayer = g.append("g").attr("class", "link-group");
+            const nodeLayer = g.append("g").attr("class", "node-group");
+
+            const link = linkLayer.selectAll("line")
+                .data(vizLinks)
+                .enter().append("line")
+                .attr("class", "link");
+
+            const node = nodeLayer.selectAll("circle")
+                .data(vizNodes)
+                .enter().append("circle")
+                .attr("r", 12)
+                .attr("fill", d => d.local ? "#4f46e5" : "#fb923c")
+                .attr("class", "node shadow-lg")
+                .on("click", (e, d) => window.openNodeOverlay(d.id));
+
+            simulation.nodes(vizNodes);
+            simulation.force("link").links(vizLinks);
+            simulation.alpha(0.3).restart();
+
+            simulation.on("tick", () => {
+                link.attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                node.attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+            });
         }
 
         window.updateStepUI = function() {
