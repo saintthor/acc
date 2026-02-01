@@ -736,6 +736,40 @@
             }
         }
 
+        /**
+         * Periodic connectivity check.
+         * Ensures a fully connected graph by checking if every local node has at least 4 neighbors.
+         * If a node is under-connected, it randomly picks another under-filled local node and connects.
+         */
+        function ensureMinimumDegree() {
+            const locals = simulationState.nodes.filter(n => n.instance === appInstanceId);
+            let allGood = true;
+            let changed = false;
+
+            locals.forEach(n => {
+                if (n.neighbors.length < 4) {
+                    allGood = false;
+                    const possible = locals.filter(t =>
+                        t.id !== n.id &&
+                        !n.neighbors.includes(t.id) &&
+                        t.neighbors.length < 7
+                    );
+                    if (possible.length > 0) {
+                        const t = possible[Math.floor(Math.random() * possible.length)];
+                        n.neighbors.push(t.id);
+                        t.neighbors.push(n.id);
+                        changed = true;
+                    }
+                }
+            });
+
+            if (changed) {
+                if (typeof updateNetworkViz === 'function' && g) updateNetworkViz();
+                saveFullState();
+            }
+            return allGood;
+        }
+
         window.initNetwork = async function() {
             const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
             if (saved && saved.nodes && saved.nodes.length > 0) {
@@ -761,6 +795,15 @@
             simulationState.readyFlags = [t('ready_net')];
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
             startDiscovery(); setInterval(startDiscovery, 15000);
+
+            // Periodic check to ensure all nodes are connected (min degree 4)
+            const connectInterval = setInterval(() => {
+                if (ensureMinimumDegree()) {
+                    clearInterval(connectInterval);
+                    console.log("Network fully connected (min degree 4).");
+                }
+            }, 2000);
+
             await saveFullState();
         };
 
