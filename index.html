@@ -746,6 +746,15 @@
                 const locals = Array.from({ length: CONFIG.NODE_COUNT }, (_, i) => ({
                     id: `NODE-${appInstanceId}-${i}`, instance: appInstanceId, neighbors: [], logs: [], seenIds: new Set(), ledger: {}
                 }));
+                // 1. Path-based connection to guarantee a single connected component
+                const shuffled = [...locals].sort(() => Math.random() - 0.5);
+                for (let i = 0; i < shuffled.length - 1; i++) {
+                    const u = shuffled[i], v = shuffled[i+1];
+                    if (!u.neighbors.includes(v.id)) {
+                        u.neighbors.push(v.id); v.neighbors.push(u.id);
+                    }
+                }
+                // 2. Add more random edges until target degree is reached
                 locals.forEach(n => {
                     while (n.neighbors.length < 4) {
                         const t_node = locals[Math.floor(Math.random() * locals.length)];
@@ -753,15 +762,6 @@
                             n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
                         }
                         if (locals.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
-                    }
-                });
-                // Ensure no isolated nodes
-                locals.forEach(n => {
-                    if (n.neighbors.length === 0) {
-                        const t_node = locals.find(ln => ln.id !== n.id && ln.neighbors.length < 7);
-                        if (t_node) {
-                            n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
-                        }
                     }
                 });
                 simulationState.nodes = locals;
