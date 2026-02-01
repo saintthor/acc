@@ -749,10 +749,19 @@
                 locals.forEach(n => {
                     while (n.neighbors.length < 4) {
                         const t_node = locals[Math.floor(Math.random() * locals.length)];
-                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id)) {
+                        if (t_node.id !== n.id && !n.neighbors.includes(t_node.id) && t_node.neighbors.length < 7) {
                             n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
                         }
                         if (locals.every(an => an.neighbors.length >= 7 || an.id === n.id)) break;
+                    }
+                });
+                // Ensure no isolated nodes
+                locals.forEach(n => {
+                    if (n.neighbors.length === 0) {
+                        const t_node = locals.find(ln => ln.id !== n.id && ln.neighbors.length < 7);
+                        if (t_node) {
+                            n.neighbors.push(t_node.id); t_node.neighbors.push(n.id);
+                        }
                     }
                 });
                 simulationState.nodes = locals;
