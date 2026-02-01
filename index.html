@@ -771,10 +771,10 @@
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
             startDiscovery(); setInterval(startDiscovery, 15000);
 
-            const isoInterval = setInterval(() => {
-                if (ensureNoIsolatedNodes()) clearInterval(isoInterval);
+            const degreeInterval = setInterval(() => {
+                if (ensureMinimumDegree()) clearInterval(degreeInterval);
             }, 2000);
-            ensureNoIsolatedNodes();
+            ensureMinimumDegree();
 
             await saveFullState();
         };
@@ -975,7 +975,8 @@
                 const idx = Math.floor(Math.random() * node.neighbors.length);
                 const removedId = node.neighbors[idx];
                 const neighborNode = simulationState.nodes.find(n => n.id === removedId);
-                if (neighborNode && neighborNode.neighbors.length > 1 && node.neighbors.length > 1) {
+                // Maintain min degree of 4
+                if (neighborNode && neighborNode.neighbors.length > 4 && node.neighbors.length > 4) {
                     node.neighbors.splice(idx, 1);
                     neighborNode.neighbors = neighborNode.neighbors.filter(id => id !== nodeId);
                 } else {
@@ -984,22 +985,24 @@
             }
         }
 
-        function ensureNoIsolatedNodes() {
-            const isolated = simulationState.nodes.filter(n => n.neighbors.length === 0);
-            if (isolated.length === 0) return true;
-            isolated.forEach(n => {
-                const targets = simulationState.nodes.filter(tn => tn.id !== n.id && tn.neighbors.length < 7);
-                if (targets.length > 0) {
-                    const t = targets[Math.floor(Math.random() * targets.length)];
-                    if (!n.neighbors.includes(t.id)) {
+        function ensureMinimumDegree() {
+            const underDegree = simulationState.nodes.filter(n => n.neighbors.length < 4);
+            if (underDegree.length === 0) return true;
+            underDegree.forEach(n => {
+                while (n.neighbors.length < 4) {
+                    const targets = simulationState.nodes.filter(tn => tn.id !== n.id && tn.neighbors.length < 7 && !n.neighbors.includes(tn.id));
+                    if (targets.length > 0) {
+                        const t = targets[Math.floor(Math.random() * targets.length)];
                         n.neighbors.push(t.id);
                         t.neighbors.push(n.id);
+                    } else {
+                        break;
                     }
                 }
             });
             if (simulation) updateNetworkViz();
             renderAll();
-            return false;
+            return simulationState.nodes.every(n => n.neighbors.length >= 4);
         }
 
         function relayToNeighbors(node, payload) {
