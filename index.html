@@ -770,6 +770,12 @@
             simulationState.readyFlags = [t('ready_net')];
             simulationState.step = 1; updateStepUI(); window.switchTab('nodes');
             startDiscovery(); setInterval(startDiscovery, 15000);
+
+            const isoInterval = setInterval(() => {
+                if (ensureNoIsolatedNodes()) clearInterval(isoInterval);
+            }, 2000);
+            ensureNoIsolatedNodes();
+
             await saveFullState();
         };
 
@@ -967,12 +973,33 @@
             if (!node) return;
             while (node.neighbors.length > 7) {
                 const idx = Math.floor(Math.random() * node.neighbors.length);
-                const removedId = node.neighbors.splice(idx, 1)[0];
+                const removedId = node.neighbors[idx];
                 const neighborNode = simulationState.nodes.find(n => n.id === removedId);
-                if (neighborNode) {
+                if (neighborNode && neighborNode.neighbors.length > 1 && node.neighbors.length > 1) {
+                    node.neighbors.splice(idx, 1);
                     neighborNode.neighbors = neighborNode.neighbors.filter(id => id !== nodeId);
+                } else {
+                    break;
                 }
             }
+        }
+
+        function ensureNoIsolatedNodes() {
+            const isolated = simulationState.nodes.filter(n => n.neighbors.length === 0);
+            if (isolated.length === 0) return true;
+            isolated.forEach(n => {
+                const targets = simulationState.nodes.filter(tn => tn.id !== n.id && tn.neighbors.length < 7);
+                if (targets.length > 0) {
+                    const t = targets[Math.floor(Math.random() * targets.length)];
+                    if (!n.neighbors.includes(t.id)) {
+                        n.neighbors.push(t.id);
+                        t.neighbors.push(n.id);
+                    }
+                }
+            });
+            if (simulation) updateNetworkViz();
+            renderAll();
+            return false;
         }
 
         function relayToNeighbors(node, payload) {
