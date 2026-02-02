@@ -710,8 +710,6 @@
                     const jwk = await crypto.subtle.exportKey("jwk", u.keyPair.privateKey);
                     return { ...u, jwk, keyPair: undefined };
                 })),
-                chains: simulationState.chains,
-                speedyChannels: simulationState.speedyChannels,
                 superUserJwk: superUser ? await crypto.subtle.exportKey("jwk", superUser.keyPair.privateKey) : null,
                 superUserPub: simulationState.superUserPub,
                 step: simulationState.step,
@@ -833,25 +831,20 @@
         };
 
         window.initBanknotes = async function() {
-            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
-            if (saved && saved.chains && saved.chains.length > 0) {
-                simulationState.chains = saved.chains;
-            } else {
-                const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
-                const h = await getHash(filledDef);
-                for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
-                    const gData = `${h}\\n${s}\\n${superUser.pub}`;
-                    const gId = await getHash(gData);
-                    const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
-                    const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
-                    const ts = Date.now();
-                    const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
-                    const sig = await signData(payData, superUser.keyPair.privateKey);
-                    const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
-                    await updateGlobalState(genesis); await updateGlobalState(payment);
-                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
-                    multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
-                }
+            const filledDef = CONFIG.DEFINITION_TEXT.replace("[SysPubKey]", superUser.pub);
+            const h = await getHash(filledDef);
+            for (let s = 1; s <= CONFIG.BANKNOTE_COUNT; s++) {
+                const gData = `${h}\\n${s}\\n${superUser.pub}`;
+                const gId = await getHash(gData);
+                const genesis = { id: gId, type: 'GENESIS', data: gData, author: superUser.pub, chainRootId: gId };
+                const target = simulationState.users[Math.floor(Math.random() * simulationState.users.length)];
+                const ts = Date.now();
+                const payData = `PREV:${gId}\\nTYPE:PAYMENT\\nTARGET:${target.pub}\\nTS:${ts}`;
+                const sig = await signData(payData, superUser.keyPair.privateKey);
+                const payment = { id: sig, type: 'PAYMENT', data: payData, author: superUser.pub, target: target.pub, chainRootId: gId, sig };
+                await updateGlobalState(genesis); await updateGlobalState(payment);
+                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: genesis }));
+                multiPublish(CONFIG.TOPIC_MESH, JSON.stringify({ block: payment }));
             }
             simulationState.readyFlags.push(t('ready_assets'));
             simulationState.step = 3; updateStepUI(); window.switchTab('chains');
@@ -859,25 +852,20 @@
         };
 
         window.initChannels = async function() {
-            const saved = JSON.parse(localStorage.getItem('aob_lab_v13_redundant_full') || 'null');
-            if (saved && saved.speedyChannels && saved.speedyChannels.length > 0) {
-                simulationState.speedyChannels = saved.speedyChannels;
-            } else {
-                const users = simulationState.users;
-                const remotes = simulationState.remoteUsers;
-                for (let round = 0; round < 20; round++) {
-                    for (let i = 0; i < users.length; i++) {
-                        let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
-                        if (curCount >= 4) continue;
-                        let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
-                        pool.sort(() => Math.random() - 0.5);
-                        for (let targetPub of pool) {
-                            const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
-                            const sorted = [users[i].pub, targetPub].sort();
-                            if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
-                                await createAndBroadcastChannel(users[i], u2);
-                                if (++curCount >= 4) break;
-                            }
+            const users = simulationState.users;
+            const remotes = simulationState.remoteUsers;
+            for (let round = 0; round < 20; round++) {
+                for (let i = 0; i < users.length; i++) {
+                    let curCount = simulationState.speedyChannels.filter(c => c.participants.some(p => p.pub === users[i].pub)).length;
+                    if (curCount >= 4) continue;
+                    let pool = [...users.filter(u=>u.pub !== users[i].pub).map(u=>u.pub), ...remotes];
+                    pool.sort(() => Math.random() - 0.5);
+                    for (let targetPub of pool) {
+                        const u2 = users.find(u => u.pub === targetPub) || { pub: targetPub, nodes: ['REMOTE-NODE'] };
+                        const sorted = [users[i].pub, targetPub].sort();
+                        if (!simulationState.speedyChannels.find(c => c.participants[0].pub === sorted[0] && c.participants[1].pub === sorted[1])) {
+                            await createAndBroadcastChannel(users[i], u2);
+                            if (++curCount >= 4) break;
                         }
                     }
                 }
