@@ -678,6 +678,7 @@
             chains: [], speedyChannels: [], step: 0,
             processedIds: new Set(),
             pendingMortgages: [],
+            pendingSpeedyUpdates: [],
             activeAmount: 10.00,
             readyFlags: [], 
             instanceId: appInstanceId
@@ -921,7 +922,16 @@
             } else if (c) {
                 if (!c.blocks.find(b => b.id === block.id)) {
                     c.blocks.push(block);
-                    if (block.type === 'PAYMENT') { c.currentOwner = block.target; c.status = 'FREE'; }
+                    if (block.type === 'PAYMENT') {
+                        // Synchronize balance if it's a withdrawal from a speedy channel
+                        const ch = simulationState.speedyChannels.find(x => x.id === block.author);
+                        if (ch) {
+                            const p = ch.participants.find(part => part.pub === block.target);
+                            if (p) p.balance = r2(p.balance - c.denomination);
+                        }
+                        c.currentOwner = block.target;
+                        c.status = 'FREE';
+                    }
                     else if (block.type === 'MORTGAGE') {
                         c.status = 'MORTGAGED'; c.currentOwner = block.target;
                         const ch = simulationState.speedyChannels.find(x=>x.id===block.target);
@@ -961,6 +971,26 @@
                     if (pm.target === block.id) {
                         const p = chan.participants.find(p => p.pub === pm.author); if (p) p.balance = r2(p.balance + pm.value);
                         const chain = simulationState.chains.find(x => x.genesisId === pm.genesisId); if (chain) chain.currentOwner = block.id;
+                        return false;
+                    }
+                    return true;
+                });
+
+                // Apply pending P2P updates for this channel
+                simulationState.pendingSpeedyUpdates = simulationState.pendingSpeedyUpdates.filter(pu => {
+                    if (pu.channelId === block.id) {
+                        const sIdx = chan.participants.findIndex(p => p.pub === pu.senderPub);
+                        if (sIdx !== -1) {
+                            const rIdx = sIdx === 0 ? 1 : 0;
+                            if (pu.balances) {
+                                chan.participants[0].balance = pu.balances[0];
+                                chan.participants[1].balance = pu.balances[1];
+                            } else {
+                                chan.participants[sIdx].balance = r2(chan.participants[sIdx].balance - pu.amount);
+                                chan.participants[rIdx].balance = r2(chan.participants[rIdx].balance + pu.amount);
+                            }
+                            chan.history.push({ from: chan.participants[sIdx].fp, to: chan.participants[rIdx].fp, amount: pu.amount, time: Date.now() });
+                        }
                         return false;
                     }
                     return true;
@@ -1294,7 +1324,14 @@
             
             const msgId = Math.random().toString(36).substr(2, 9);
             simulationState.processedIds.add(msgId);
-            multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: id, senderPub: sender.pub, amount: amt }));
+            multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({
+                type: 'SPEEDY_CHANNEL_UPDATE',
+                msgId: msgId,
+                channelId: id,
+                senderPub: sender.pub,
+                amount: amt,
+                balances: [c.participants[0].balance, c.participants[1].balance]
+            }));
             window.refreshChannelUI(id); await saveFullState();
         };
 
@@ -1353,7 +1390,14 @@
                 c.history.push({ from: sender.fp, to: receiver.fp, amount: amt, time: Date.now(), cascade: true });
                 const msgId = Math.random().toString(36).substr(2, 9);
                 simulationState.processedIds.add(msgId);
-                multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({ type: 'SPEEDY_CHANNEL_UPDATE', msgId: msgId, channelId: cid, senderPub: curPub, amount: amt }));
+                multiPublish(`${CONFIG.TOPIC_P2P}/${receiver.node}`, JSON.stringify({
+                    type: 'SPEEDY_CHANNEL_UPDATE',
+                    msgId: msgId,
+                    channelId: cid,
+                    senderPub: curPub,
+                    amount: amt,
+                    balances: [c.participants[0].balance, c.participants[1].balance]
+                }));
                 curPub = receiver.pub;
             });
             cascadeSession.active = false; window.closeOverlay(); await saveFullState();
@@ -1562,12 +1606,19 @@
                                 const sIdx = c.participants.findIndex(p => p.pub === d.senderPub);
                                 if (sIdx !== -1) {
                                     const rIdx = sIdx === 0 ? 1 : 0;
-                                    c.participants[sIdx].balance = r2(c.participants[sIdx].balance - d.amount);
-                                    c.participants[rIdx].balance = r2(c.participants[rIdx].balance + d.amount);
+                                    if (d.balances) {
+                                        c.participants[0].balance = d.balances[0];
+                                        c.participants[1].balance = d.balances[1];
+                                    } else {
+                                        c.participants[sIdx].balance = r2(c.participants[sIdx].balance - d.amount);
+                                        c.participants[rIdx].balance = r2(c.participants[rIdx].balance + d.amount);
+                                    }
                                     c.history.push({ from: c.participants[sIdx].fp, to: c.participants[rIdx].fp, amount: d.amount, time: Date.now() });
                                     if (currentOpenedChannelId === d.channelId) window.refreshChannelUI(d.channelId);
                                     window.renderAll();
                                 }
+                            } else {
+                                simulationState.pendingSpeedyUpdates.push(d);
                             }
                         }
                     } catch(e) {}
