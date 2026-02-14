@@ -630,8 +630,8 @@
         const r0 = (n) => Math.round(n);
 
         const urlParams = new URLSearchParams(window.location.search);
-        var currentLang = urlParams.get('lang') || localStorage.getItem('aob_lang') || 'zh';
-        if (currentLang !== 'zh' && currentLang !== 'en') currentLang = 'zh';
+        var currentLang = urlParams.get('lang') || localStorage.getItem('aob_lang') || 'en';
+        if (currentLang !== 'zh' && currentLang !== 'en') currentLang = 'en';
 
         function t(key) { return TRANSLATIONS[currentLang][key] || key; }
 

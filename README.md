@@ -1,20 +1,9 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Advanced Cryptocurrency TestNet
 
-# Run and deploy your AI Studio app
+This is a real-running cryptocurrency system that also features interactive educational capabilities.
 
-This contains everything you need to run your app locally.
+Here, users can build an innovative blockchain currency architecture based on Atomic Ownership Blockchains (AOB), which is fully superior to conventional technologies.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1wKa5p5J6m9RZsJjT31oN7xLj0gOwWoU7
+AOB constructs a currency system using microscopic public-domain private chains, treating each blockchain as a prop banknote. Its function is similar to paper currency, recording the transfer of user assets by changing the ownership of the banknotes.
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Academic Paper: [Achieving Greater Decentralization with Atomic Ownership Blockchains](https://doi.org/10.5195/ledger.2025.425)
